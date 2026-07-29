@@ -37,8 +37,25 @@ LLM_API_URL = _getenv("LLM_API_URL", "http://localhost:11434/api/generate")
 
 CONVERSATION_TIMEOUT = int(_getenv("CONVERSATION_TIMEOUT", "8"))
 
-STT_ENGINE = _getenv("STT_ENGINE", "google")  # google or vosk
+STT_ENGINE = _getenv("STT_ENGINE", "google")
 VOSK_MODEL_PATH = _getenv("VOSK_MODEL_PATH", "")
 
-TTS_ENGINE = _getenv("TTS_ENGINE", "pyttsx3")  # pyttsx3 or espeak
-TUI_MODE = False  # set via --text flag at runtime
+TTS_ENGINE = _getenv("TTS_ENGINE", "piper")
+TUI_MODE = False
+
+
+def load_persisted_settings() -> None:
+    from database import get_preference  # noqa: late import to avoid circular
+    global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT
+    stt = get_preference("stt_engine")
+    tts = get_preference("tts_engine")
+    timeout = get_preference("conversation_timeout")
+    if stt:
+        STT_ENGINE = stt
+    if tts:
+        TTS_ENGINE = tts
+    if timeout:
+        try:
+            CONVERSATION_TIMEOUT = int(timeout)
+        except ValueError:
+            pass

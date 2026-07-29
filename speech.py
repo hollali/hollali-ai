@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
+import math
+import queue
+import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import config
+from log import logger
 
 # ---------------------------------------------------------------------------
 # TTS
@@ -19,7 +25,6 @@ def _init_pyttsx3():
     import pyttsx3
     _tts_engine = pyttsx3.init()
     voices = _tts_engine.getProperty("voices")
-    # prefer en-us (32), then en-gb-rp (30), then first available
     preferred = ["gmw/en-us", "gmw/en-gb-x-rp"]
     for p in preferred:
         for v in voices:
@@ -36,21 +41,82 @@ def _init_pyttsx3():
     _tts_engine.setProperty("volume", 1.0)
 
 
-def talk(text: str) -> None:
-    print(text)
-    if config.TTS_ENGINE == "espeak":
-        subprocess.run(
-            ["espeak-ng", text, "-v", "en-us", "-s", "120", "-p", "50", "-a", "200"],
-            capture_output=True,
+_PIPER_BIN = Path.home() / ".local" / "bin" / "piper"
+_PIPER_VOICE = Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx"
+
+
+def _talk_piper(text: str) -> None:
+    if not _PIPER_BIN.exists():
+        logger.warning("Piper binary not found, falling back to espeak")
+        _talk_espeak(text)
+        return
+    if not _PIPER_VOICE.exists():
+        logger.warning("Piper voice model not found, falling back to espeak")
+        _talk_espeak(text)
+        return
+    try:
+        piper = subprocess.Popen(
+            [str(_PIPER_BIN), "--model", str(_PIPER_VOICE), "--output_raw"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
-    elif config.TTS_ENGINE == "pyttsx3":
-        if _tts_engine is None:
-            _init_pyttsx3()
+        raw_out, piper_err = piper.communicate(input=text.encode(), timeout=30)
+        if piper.returncode != 0:
+            logger.warning(f"Piper failed (rc={piper.returncode}): {piper_err.decode().strip()}")
+            _talk_espeak(text)
+            return
+
+        wav_path = Path.home() / ".hollali" / "piper_output.wav"
+        wav_path.parent.mkdir(parents=True, exist_ok=True)
+
+        import struct
+        data_len = len(raw_out)
+        with open(wav_path, "wb") as wf:
+            wf.write(b"RIFF")
+            wf.write(struct.pack("<I", 36 + data_len))
+            wf.write(b"WAVE")
+            wf.write(b"fmt ")
+            wf.write(struct.pack("<I", 16))
+            wf.write(struct.pack("<H", 1))
+            wf.write(struct.pack("<H", 1))
+            wf.write(struct.pack("<I", 22050))
+            wf.write(struct.pack("<I", 44100))
+            wf.write(struct.pack("<H", 2))
+            wf.write(struct.pack("<H", 16))
+            wf.write(b"data")
+            wf.write(struct.pack("<I", data_len))
+            wf.write(raw_out)
+
+        subprocess.run(
+            ["paplay", str(wav_path)],
+            capture_output=True, timeout=60,
+        )
+        wav_path.unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning(f"Piper playback error: {e}", exc_info=True)
+        _talk_espeak(text)
+
+
+def _talk_espeak(text: str) -> None:
+    result = subprocess.run(
+        ["espeak-ng", text, "-v", "en-us", "-s", "120", "-p", "50", "-a", "200"],
+        capture_output=True, timeout=30,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode().strip()
+        logger.warning(f"espeak-ng failed (rc={result.returncode}): {stderr}")
+
+
+def talk(text: str) -> None:
+    logger.info(text)
+    if config.TTS_ENGINE == "piper":
+        _talk_piper(text)
+    elif config.TTS_ENGINE == "espeak":
+        _talk_espeak(text)
+    elif _tts_engine is None:
+        _init_pyttsx3()
         _tts_engine.say(text)
         _tts_engine.runAndWait()
     else:
-        if _tts_engine is None:
-            _init_pyttsx3()
         _tts_engine.say(text)
         _tts_engine.runAndWait()
 
@@ -71,15 +137,14 @@ def _init_vosk():
         if _vosk_model is not None:
             return
         import vosk
-        vosk.SetLogLevel(-1)  # suppress verbose C++ logs
+        vosk.SetLogLevel(-1)
         model_path = config.VOSK_MODEL_PATH
         if model_path and Path(model_path).exists():
             _vosk_model = vosk.Model(str(model_path))
         else:
-            # auto-download small model
             model_path = Path.home() / ".hollali" / "vosk-model-small"
             if not model_path.exists():
-                print("Downloading Vosk small model (~40MB)...")
+                logger.info("Downloading Vosk small model (~40MB)...")
                 import urllib.request
                 import zipfile
                 model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,11 +160,21 @@ def _init_vosk():
             _vosk_model = vosk.Model(str(model_path))
 
 
+def _rms(data: bytes) -> float:
+    if not data:
+        return 0.0
+    samples = len(data) // 2
+    total = 0
+    for i in range(samples):
+        val = int.from_bytes(data[i * 2 : i * 2 + 2], "little", signed=True)
+        total += val * val
+    return math.sqrt(total / samples)
+
+
 def rec_audio(timeout: float | None = None, phrase_limit: float | None = None,
               partial_cb=None, level_cb=None) -> str:
     if config.STT_ENGINE == "vosk":
         return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
-
     return _rec_google(timeout, phrase_limit)
 
 
@@ -108,9 +183,6 @@ def _rec_vosk(timeout: float | None = None, partial_cb=None, level_cb=None) -> s
     if _vosk_model is None:
         _init_vosk()
 
-    import json
-    import math
-    import queue
     import sounddevice as sd
     import vosk
 
@@ -119,25 +191,21 @@ def _rec_vosk(timeout: float | None = None, partial_cb=None, level_cb=None) -> s
 
     def callback(indata, frames, atime, status):
         if status:
-            print(f"Audio status: {status}", file=sys.stderr)
-        import numpy as np
-        arr = np.frombuffer(indata, dtype=np.int16).astype(np.float32)
-        rms = np.sqrt(np.mean(arr ** 2))
+            logger.warning(f"Audio status: {status}")
+        raw = bytes(indata)
+        level = _rms(raw)
         if level_cb:
-            level = min(1.0, rms / 8000.0)
-            level_cb(level)
-        if rms < 200:
+            level_cb(min(1.0, level / 8000.0))
+        if level < 200:
             return
-        q.put(bytes(indata))
+        q.put(raw)
 
-    print("Listening (Vosk)...")
+    logger.debug("Listening (Vosk)...")
     with sd.RawInputStream(
         samplerate=16000, blocksize=8000, dtype="int16",
         channels=1, callback=callback,
     ):
         rec = vosk.KaldiRecognizer(_vosk_model, 16000)
-        import time
-        start = time.time()
         last_activity = time.time()
         while True:
             try:
@@ -156,7 +224,7 @@ def _rec_vosk(timeout: float | None = None, partial_cb=None, level_cb=None) -> s
                 result = json.loads(rec.Result())
                 text = result.get("text", "").strip()
                 if text:
-                    print(f"You said: {text}")
+                    logger.info(f"You said: {text}")
                     return text
                 last_activity = time.time()
             partial = json.loads(rec.PartialResult())
@@ -175,7 +243,7 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
     try:
         import speech_recognition as sr
     except ImportError:
-        print("speech_recognition not installed, falling back to Vosk")
+        logger.warning("speech_recognition not installed, falling back to Vosk")
         config.STT_ENGINE = "vosk"
         return _rec_vosk(timeout)
 
@@ -194,12 +262,13 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
                 sys.stderr = _old_stderr
 
         with mic as source:
-            if timeout is None:
+            if timeout is None or timeout > 0:
+                adj_timeout = timeout if timeout else 1
                 with open(_os.devnull, "w") as _null:
                     _old_stderr = sys.stderr
                     sys.stderr = _null
                     try:
-                        recog.adjust_for_ambient_noise(source, duration=0.5)
+                        recog.adjust_for_ambient_noise(source, duration=min(0.5, adj_timeout))
                     finally:
                         sys.stderr = _old_stderr
             try:
@@ -208,20 +277,20 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
                 return ""
     except (OSError, AttributeError) as e:
         if config.STT_ENGINE != "vosk":
-            print(f"Microphone not available ({e}), falling back to Vosk")
+            logger.warning(f"Microphone not available ({e}), falling back to Vosk")
             config.STT_ENGINE = "vosk"
         return _rec_vosk(timeout)
 
     try:
         data = recog.recognize_google(audio)
-        print(f"You said: {data}")
+        logger.info(f"You said: {data}")
         return data
     except sr.UnknownValueError:
         return ""
     except sr.RequestError as ex:
-        print(f"Request Error from Google Speech Recognition: {ex}")
+        logger.error(f"Google STT request error: {ex}")
         return ""
 
 
 def call(text: str) -> bool:
-    return "hollali" in text.lower()
+    return bool(re.search(r"\bhollali\b", text.lower()))

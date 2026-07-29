@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-import datetime
 import sqlite3
+import threading
 from pathlib import Path
 
 DB_PATH = Path.home() / ".hollali" / "hollali.db"
+_local = threading.local()
 
 
 def _get_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+    if not hasattr(_local, "conn") or _local.conn is None:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _local.conn = sqlite3.connect(str(DB_PATH))
+        _local.conn.row_factory = sqlite3.Row
+        _local.conn.execute("PRAGMA journal_mode=WAL")
+        _local.conn.execute("PRAGMA busy_timeout=5000")
+    return _local.conn
 
 
 def init_db() -> None:
@@ -24,19 +28,16 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-
             CREATE TABLE IF NOT EXISTS notes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL DEFAULT '',
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-
             CREATE TABLE IF NOT EXISTS preferences (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-
             CREATE INDEX IF NOT EXISTS idx_conversations_session
                 ON conversations(session_id, created_at);
         """)
@@ -65,6 +66,16 @@ def get_last_session_id() -> str | None:
             "SELECT session_id FROM conversations ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
     return row["session_id"] if row else None
+
+
+def delete_conversation(session_id: str) -> None:
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+
+
+def clear_all_conversations() -> None:
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM conversations")
 
 
 def save_note(title: str, content: str) -> int:

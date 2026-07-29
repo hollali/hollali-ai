@@ -9,6 +9,7 @@ import requests
 
 import config
 import database
+from log import logger
 
 LLM_API_URL = config.LLM_API_URL
 LLM_MODEL = config.LLM_MODEL
@@ -99,7 +100,7 @@ if prev_session:
         label = "User" if msg["role"] == "user" else "Hollali"
         _history.append(f"{label}: {msg['content']}")
     if _history:
-        print(f"Loaded {len(_history)} messages from last session ({prev_session})")
+        logger.info(f"Loaded {len(_history)} messages from last session ({prev_session})")
 
 
 def _build_prompt(user_input: str) -> str:
@@ -131,7 +132,7 @@ def query(user_input: str) -> tuple[Literal["tool", "chat"], str]:
         resp.raise_for_status()
         raw = resp.json().get("response", "").strip()
     except Exception as e:
-        print(f"LLM error: {e}")
+        logger.error("LLM query failed", exc_info=True)
         return "chat", ""
 
     _save("user", user_input)

@@ -2,12 +2,37 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import signal
 import sys
 from pathlib import Path
 
-PLUGIN_DIR = Path(__file__).parent / "plugins"
+from log import logger
 
+PLUGIN_DIR = Path(__file__).parent / "plugins"
 _loaded_plugins: list[object] = []
+_PLUGIN_TIMEOUT = 5
+
+
+def _run_with_timeout(fn, text: str, timeout: int) -> str | None:
+    result: list[str | None] = [None]
+    exc: list[BaseException | None] = [None]
+
+    def worker():
+        try:
+            result[0] = str(fn(text) or "")
+        except BaseException as e:
+            exc[0] = e
+
+    import threading
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logger.warning(f"Plugin handler timed out after {timeout}s")
+        return None
+    if exc[0]:
+        raise exc[0]
+    return result[0]
 
 
 def discover() -> list[dict]:
@@ -29,7 +54,7 @@ def discover() -> list[dict]:
             try:
                 spec.loader.exec_module(mod)
             except Exception as e:
-                print(f"Plugin load error ({f.name}): {e}")
+                logger.error(f"Plugin load error ({f.name}): {e}", exc_info=True)
                 continue
         else:
             mod = sys.modules[mod_name]
@@ -37,7 +62,11 @@ def discover() -> list[dict]:
         for name, obj in inspect.getmembers(mod, inspect.isclass):
             if name.startswith("_"):
                 continue
-            plugin = obj()
+            try:
+                plugin = obj()
+            except Exception as e:
+                logger.error(f"Plugin instantiation error ({name}): {e}", exc_info=True)
+                continue
             if hasattr(plugin, "name") and hasattr(plugin, "handle"):
                 plugins.append({
                     "name": plugin.name,
@@ -45,7 +74,7 @@ def discover() -> list[dict]:
                     "instance": plugin,
                 })
                 _loaded_plugins.append(plugin)
-                print(f"  Loaded plugin: {plugin.name}")
+                logger.info(f"Loaded plugin: {plugin.name}")
 
     return plugins
 
@@ -55,8 +84,8 @@ def match(text: str) -> str | None:
         for kw in getattr(p, "keywords", []):
             if kw in text.lower():
                 try:
-                    return str(p.handle(text) or "")
+                    return _run_with_timeout(p.handle, text, _PLUGIN_TIMEOUT)
                 except Exception as e:
-                    print(f"Plugin error ({p.name}): {e}")
+                    logger.error(f"Plugin error ({p.name}): {e}", exc_info=True)
                     return None
     return None

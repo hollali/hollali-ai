@@ -10,7 +10,7 @@ A modular, offline-capable voice assistant with both **terminal** and **desktop 
 - **Dual interfaces** — terminal/text mode (`--text`) or full desktop GUI
 - **Desktop GUI** — system tray icon, main chat window, compact overlay mode
 - **Speech-to-text** — Google STT (online) or Vosk (offline, auto-downloads small model)
-- **Text-to-speech** — pyttsx3 or espeak-ng
+- **Text-to-speech** — Piper TTS (default), espeak-ng, or pyttsx3
 - **System controls** — volume (pulseaudio), screen lock, screenshot, brightness
 - **Plugin system** — drop `.py` files into `plugins/` directory with `name`, `keywords`, and `handle(text)`
 - **Conversation memory** — last 5 exchanges per session, persisted in SQLite across restarts
@@ -20,13 +20,15 @@ A modular, offline-capable voice assistant with both **terminal** and **desktop 
 - **Conversation history** — browse past sessions from the SQLite database
 - **Theme support** — dark/light toggle, persisted
 - **Auto-start** — optional launch at login via settings
+- **Structured logging** — file + console logging via `log.py`, replacing `print()`
 
 ## Requirements
 
 - **Python** 3.11+
 - **Ollama** — for local LLM (install separately from [ollama.ai](https://ollama.ai))
 - **PyAudio** — for Google STT (`portaudio-devel` + `pyaudio` pip package)
-- **espeak-ng** — for TTS (optional, install via system package manager)
+- **Piper TTS** — default speech engine (see installation instructions below)
+- **espeak-ng** — optional fallback TTS (install via system package manager)
 
 ## Installation
 
@@ -35,7 +37,8 @@ A modular, offline-capable voice assistant with both **terminal** and **desktop 
 cd /home/hollali/Projects/hollali-ai
 
 # Install system dependencies (Fedora)
-sudo dnf install -y portaudio-devel espeak-ng
+sudo dnf install -y portaudio-devel  # required for PyAudio
+# espeak-ng is optional: sudo dnf install -y espeak-ng
 
 # Install Python packages
 pip install --user --break-system-packages \
@@ -46,6 +49,17 @@ pip install --user --break-system-packages \
 
 # Or use requirements.txt
 pip install --user --break-system-packages -r requirements.txt
+
+# Install Piper TTS (default speech engine)
+mkdir -p ~/.local/bin
+# Download piper_linux_x86_64.tar.gz from
+#   https://github.com/rhasspy/piper/releases
+# and extract so the `piper` binary is at ~/.local/bin/piper
+tar xzf piper_linux_x86_64.tar.gz -C ~/.local/bin/
+mkdir -p ~/.local/share/piper-tts/voices
+# Download en_US-lessac-medium.onnx + .json from
+#   https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium
+# and place both files in ~/.local/share/piper-tts/voices/
 
 # Set up your .env file
 cp .env.example .env
@@ -93,7 +107,7 @@ All configuration is via `.env` file (copy from `.env.example`):
 | Variable | Default | Description |
 |---|---|---|
 | `STT_ENGINE` | `google` | Speech-to-text engine: `google` or `vosk` |
-| `TTS_ENGINE` | `espeak` | Text-to-speech engine: `pyttsx3` or `espeak` |
+| `TTS_ENGINE` | `piper` | Text-to-speech engine: `piper`, `espeak`, or `pyttsx3` |
 | `LLM_ENABLED` | `true` | Enable local LLM for natural conversation |
 | `LLM_MODEL` | `qwen:latest` | Ollama model name |
 | `LLM_API_URL` | `http://localhost:11434/api/generate` | Ollama API endpoint |
@@ -159,10 +173,11 @@ In the desktop GUI, open **Settings** (toolbar or tray menu) and select the desi
 ### Settings Dialog
 
 - STT engine (google / vosk)
-- TTS engine (pyttsx3 / espeak)
+- TTS engine (piper / espeak / pyttsx3)
 - Conversation timeout (3-60 sec)
 - Theme (dark / light)
 - Auto-start at login toggle
+- Settings persisted to SQLite across restarts (`database.set_preference`)
 
 ## Commands
 
@@ -210,9 +225,10 @@ Plugins are auto-discovered at startup and matched before other handlers.
 main.py           CLI entry point (text + voice modes)
 desktop.py        GUI entry point (PySide6 — tray, window, overlay)
 config.py         .env-based configuration
-speech.py         STT (Google/Vosk) + TTS (pyttsx3/espeak)
+speech.py         STT (Google/Vosk) + TTS (Piper/espeak/pyttsx3)
 commands.py       All command handlers + LLM routing
 llm.py            Ollama LLM integration, conversation memory
+log.py            Structured logging (file + console, replaces print())
 database.py       SQLite persistence (conversations, notes, preferences)
 utils.py          Cross-platform helpers (date, email, notes, apps)
 system_control.py System commands (volume, brightness, screenshot, lock)
@@ -241,6 +257,7 @@ plugins/          Drop-in plugin directory
           │
     ┌─────┴─────┐
     │ config.py │
+    │ log.py    │
     │ database  │
     │ utils.py  │
     └───────────┘
@@ -254,7 +271,7 @@ plugins/          Drop-in plugin directory
 
 **No microphone / audio input** — Check PulseAudio/ALSA: `pactl info`, `arecord -l`. The app falls back to Vosk if PyAudio is unavailable.
 
-**espeak-ng not found** — Install it: `sudo dnf install espeak-ng` (Fedora) or `sudo apt install espeak-ng` (Debian/Ubuntu).
+**espeak-ng not found** — Install it: `sudo dnf install espeak-ng` (Fedora) or `sudo apt install espeak-ng` (Debian/Ubuntu). Hollali defaults to Piper TTS; espeak-ng is only needed if you select `espeak` as the TTS engine.
 
 **LLM not responding** — Ensure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull qwen:latest`).
 

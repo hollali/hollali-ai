@@ -328,7 +328,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("STT Engine:", self.stt_combo)
 
         self.tts_combo = QtWidgets.QComboBox()
-        self.tts_combo.addItems(["pyttsx3", "espeak"])
+        self.tts_combo.addItems(["piper", "espeak", "pyttsx3"])
         self.tts_combo.setCurrentText(config.TTS_ENGINE)
         form.addRow("TTS Engine:", self.tts_combo)
 
@@ -364,6 +364,9 @@ class SettingsDialog(QtWidgets.QDialog):
         config.STT_ENGINE = self.stt_combo.currentText()
         config.TTS_ENGINE = self.tts_combo.currentText()
         config.CONVERSATION_TIMEOUT = self.timeout_spin.value()
+        database.set_preference("stt_engine", config.STT_ENGINE)
+        database.set_preference("tts_engine", config.TTS_ENGINE)
+        database.set_preference("conversation_timeout", str(config.CONVERSATION_TIMEOUT))
         database.set_preference("theme", self.theme_combo.currentText())
         self._set_autostart(self.autostart_cb.isChecked())
         self.accept()
@@ -705,6 +708,7 @@ class HollaliDesktop:
 
 def main():
     database.init_db()
+    config.load_persisted_settings()
     desktop = HollaliDesktop()
     try:
         sys.exit(desktop.run())

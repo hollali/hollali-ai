@@ -8,6 +8,8 @@ import random
 import sys
 import time
 import webbrowser
+
+from log import logger
 from pathlib import Path
 
 import config
@@ -83,7 +85,7 @@ def handle_weather(text: str) -> str:
 
     try:
         js = requests.get(url).json()
-    except Exception:
+    except requests.RequestException:
         return " Could not fetch weather data. Please check your connection."
 
     if js.get("cod") == "404":
@@ -247,7 +249,7 @@ def handle_email(text: str) -> str:
         utils.send_email(to, content)
         return " Email has been sent!"
     except Exception as e:
-        print(e)
+        logger.error("Email send failed", exc_info=True)
         return " I am not able to send this email"
 
 
@@ -275,7 +277,7 @@ def handle_news(text: str) -> str:
     try:
         response = requests.get(url)
         response.raise_for_status()
-    except Exception:
+    except requests.RequestException:
         return " Please check your connection"
 
     news = json.loads(response.text)
@@ -312,7 +314,7 @@ def handle_send_message(text: str) -> str:
         from_=config.TWILIO_FROM_NUMBER,
         to=config.TWILIO_TO_NUMBER,
     )
-    print(message.sid)
+    logger.debug(f"Twilio message SID: {message.sid}")
     return " Message sent successfully"
 
 
@@ -333,7 +335,7 @@ def handle_calculate(text: str) -> str:
         answer = next(res.results).text
         return f" The answer is {answer}"
     except Exception as e:
-        print(e)
+        logger.error("WolframAlpha query failed", exc_info=True)
         return " I could not calculate that."
 
 
@@ -355,7 +357,7 @@ def handle_what_is(text: str) -> str:
         answer = next(res.results).text
         return f" {answer}"
     except Exception as e:
-        print(e)
+        logger.error("WolframAlpha query failed", exc_info=True)
         return " I could not find that."
 
 
@@ -367,7 +369,7 @@ def handle_google_calendar(text: str) -> str:
         service = _get_calendar_service()
         _calendar_events(10, service)
     except Exception as e:
-        print(e)
+        logger.error("Google Calendar error", exc_info=True)
         return " Could not connect to Google Calendar. Please check your credentials and connection."
     return ""
 
@@ -406,7 +408,7 @@ def _calendar_events(num: int, service) -> None:
 
     talk("Hey there! Good Day. Hope you are doing fine. These are the events to do today")
     now = datetime.datetime.utcnow().isoformat() + "Z"
-    print(f"Getting the upcoming {num} events")
+    logger.debug(f"Getting the upcoming {num} events")
     events_result = (
         service.events()
         .list(calendarId="primary", timeMin=now, maxResults=num, singleEvents=True, orderBy="startTime")
@@ -431,47 +433,7 @@ def _calendar_events(num: int, service) -> None:
 def handle_pizza(text: str) -> str:
     if "pizza" not in text and "order" not in text:
         return ""
-    _pizza_order()
-    return ""
-
-
-def _pizza_order() -> None:
-    if not config.CHROME_DRIVER_PATH:
-        talk("ChromeDriver path not configured. Please set CHROME_DRIVER_PATH in .env")
-        return
-
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-
-    options = webdriver.ChromeOptions()
-    if config.CHROME_DRIVER_PATH:
-        service = webdriver.chrome.service.Service(config.CHROME_DRIVER_PATH)
-        driver = webdriver.Chrome(service=service, options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
-
-    driver.maximize_window()
-    talk("Opening Dominos")
-    driver.get("https://www.dominos.co.in/")
-    time.sleep(2)
-
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "ORDER ONLINE NOW"))
-        ).click()
-    except Exception:
-        talk("Could not find the order button on Dominos website.")
-        driver.quit()
-        return
-
-    time.sleep(2)
-    talk("Finding your location")
-
-    talk("Please enter your location manually since location detection has changed.")
-    talk("Pizza ordering via voice is currently unavailable due to website changes.")
-    driver.quit()
+    return " Pizza ordering is no longer supported due to website changes."
 
 
 _plugin_handlers: list[dict] = []
@@ -535,7 +497,7 @@ def _run_handlers(text: str, handler_names: list[str]) -> list[str]:
         except SystemExit:
             raise
         except Exception as e:
-            print(f"Handler {name} error: {e}")
+            logger.error(f"Handler {name} error: {e}", exc_info=True)
     return responses
 
 

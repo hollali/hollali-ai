@@ -7,6 +7,7 @@ from queue import Queue
 
 import config
 from commands import process_command
+from log import logger
 from speech import call, rec_audio, talk
 
 END_CONVERSATION = ("stop listening", "that's all", "never mind", "go to sleep", "shut up")
@@ -92,7 +93,7 @@ def conversation_loop() -> None:
 def _get_input(timeout: float | None = None) -> str | None:
     try:
         return _command_queue.get(timeout=timeout) if timeout else _command_queue.get()
-    except Exception:
+    except __import__("queue").Empty:
         return None
 
 
@@ -140,7 +141,7 @@ def main() -> None:
             _exit_event.set()
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error("Main loop error", exc_info=True)
             if not config.TUI_MODE:
                 talk("I don't know that")
 
