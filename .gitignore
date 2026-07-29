@@ -1,0 +1,9 @@
+.env
+*.pickle
+__pycache__/
+*.pyc
+*.pyo
+*.tmp
+*.mp3
+.vscode/
+*.db

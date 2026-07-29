@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /home/hollali/.local/bin/python3.11 /home/hollali/Projects/hollali-ai/desktop.py "$@"

@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import datetime
+import sqlite3
+from pathlib import Path
+
+DB_PATH = Path.home() / ".hollali" / "hollali.db"
+
+
+def _get_conn() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with _get_conn() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversations_session
+                ON conversations(session_id, created_at);
+        """)
+
+
+def save_conversation(session_id: str, role: str, content: str) -> None:
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversations (session_id, role, content) VALUES (?, ?, ?)",
+            (session_id, role, content),
+        )
+
+
+def load_conversation(session_id: str, limit: int = 10) -> list[dict[str, str]]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content FROM conversations WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+def get_last_session_id() -> str | None:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT session_id FROM conversations ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return row["session_id"] if row else None
+
+
+def save_note(title: str, content: str) -> int:
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO notes (title, content) VALUES (?, ?)", (title, content)
+        )
+        return cur.lastrowid
+
+
+def list_notes(limit: int = 10) -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, title, content, created_at FROM notes ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_preference(key: str, default: str = "") -> str:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM preferences WHERE key = ?", (key,)
+        ).fetchone()
+    return row["value"] if row else default
+
+
+def set_preference(key: str, value: str) -> None:
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
+            (key, value),
+        )
