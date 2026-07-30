@@ -167,7 +167,7 @@ class EngineThread(QtCore.QThread):
             if not text:
                 continue
 
-            if is_speaking():
+            if is_speaking() and not call(text):
                 continue
 
             with self._lock:
