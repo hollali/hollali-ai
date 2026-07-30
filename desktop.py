@@ -269,64 +269,68 @@ class ChatBubble(QtWidgets.QFrame):
         super().__init__(parent)
         self._is_user = is_user
         self._palette = palette
+
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(4)
 
-        sender_color = "#ffffff" if is_user else palette["accent"]
-        sender_label = QtWidgets.QLabel(sender)
-        sender_label.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; color: {sender_color}; background: transparent;"
-        )
-        layout.addWidget(sender_label)
-
-        text_color = "white" if is_user else palette["text"]
         self.text_label = QtWidgets.QLabel(text)
         self.text_label.setWordWrap(True)
         self.text_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        text_color = palette["text"]
         self.text_label.setStyleSheet(
             f"font-size: 14px; color: {text_color}; background: transparent;"
         )
         layout.addWidget(self.text_label)
 
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.setContentsMargins(0, 2, 0, 0)
-        btn_row.setSpacing(4)
+        self._btn_row = QtWidgets.QHBoxLayout()
+        self._btn_row.setContentsMargins(0, 2, 0, 0)
+        self._btn_row.setSpacing(4)
 
-        copy_btn = QtWidgets.QPushButton("\U0001F4CB")
-        copy_btn.setFixedSize(22, 22)
-        copy_btn.setToolTip("Copy text")
-        copy_btn.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text()))
-        btn_row.addWidget(copy_btn)
+        self._copy_btn = QtWidgets.QPushButton("\U0001F4CB")
+        self._copy_btn.setFixedSize(22, 22)
+        self._copy_btn.setToolTip("Copy text")
+        self._copy_btn.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text()))
+        self._btn_row.addWidget(self._copy_btn)
 
         if not is_user:
-            self.speak_btn = QtWidgets.QPushButton("\U0001F50A")
-            self.speak_btn.setFixedSize(22, 22)
-            self.speak_btn.setToolTip("Speak this response aloud")
-            self.speak_btn.clicked.connect(lambda: talk_async(self.text_label.text()))
-            btn_row.addWidget(self.speak_btn)
+            self._speak_btn = QtWidgets.QPushButton("\U0001F50A")
+            self._speak_btn.setFixedSize(22, 22)
+            self._speak_btn.setToolTip("Speak this response aloud")
+            self._speak_btn.clicked.connect(lambda: talk_async(self.text_label.text()))
+            self._btn_row.addWidget(self._speak_btn)
 
-        self._style_tool_buttons(copy_btn)
+        self._style_tool_buttons(self._copy_btn)
         if not is_user:
-            self._style_tool_buttons(self.speak_btn)
+            self._style_tool_buttons(self._speak_btn)
 
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        self._btn_row.addStretch()
+        layout.addLayout(self._btn_row)
+
+        # Hide buttons by default; show on hover
+        self._btn_row.setVisible(False)
 
         if is_user:
             self.setObjectName("chatBubble")
             self.setStyleSheet(f"""
                 #chatBubble {{
-                    background: {palette["user_bubble"]};
+                    background: {palette["surface2"]};
                     border-radius: 16px;
-                    border-bottom-right-radius: 4px;
                 }}
             """)
         else:
             self.setStyleSheet("background: transparent; border: none;")
 
+    def enterEvent(self, event):
+        self._btn_row.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._btn_row.setVisible(False)
+        super().leaveEvent(event)
+
     def set_bubble_width(self, container_width: int):
-        ratio = 0.60 if self._is_user else 0.80
+        ratio = 0.60 if self._is_user else 0.85
         mw = max(280, int(container_width * ratio))
         self.setMaximumWidth(mw)
 
@@ -342,19 +346,13 @@ class ChatBubble(QtWidgets.QFrame):
         if self._is_user:
             self.setStyleSheet(f"""
                 #chatBubble {{
-                    background: {palette["user_bubble"]};
+                    background: {palette["surface2"]};
                     border-radius: 16px;
-                    border-bottom-right-radius: 4px;
                 }}
             """)
         else:
             self.setStyleSheet("background: transparent; border: none;")
-        sender_label = self.layout().itemAt(0).widget()
-        sender_color = "#ffffff" if self._is_user else palette["accent"]
-        sender_label.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; color: {sender_color}; background: transparent;"
-        )
-        text_color = "white" if self._is_user else palette["text"]
+        text_color = palette["text"]
         self.text_label.setStyleSheet(
             f"font-size: 14px; color: {text_color}; background: transparent;"
         )
@@ -364,7 +362,6 @@ class ChatBubble(QtWidgets.QFrame):
     def append_text(self, text_piece: str):
         current = self.text_label.text()
         self.text_label.setText(current + text_piece)
-        # auto-scroll parent ChatView
         p = self.parent()
         while p:
             if isinstance(p, ChatView):
