@@ -64,9 +64,14 @@ mkdir -p ~/.local/share/piper-tts/voices
 # Set up your .env file
 cp .env.example .env
 nano .env   # add your API keys (see Configuration section)
+
+# Or install as a package (editable mode)
+pip install -e .
 ```
 
 > **Note:** `--break-system-packages` may be needed on systems using PEP 668 (externally managed Python). Use a virtual environment if preferred.
+>
+> After `pip install -e .`, the `hollali` and `hollali-desktop` commands are available globally.
 
 ## Usage
 
@@ -74,14 +79,18 @@ nano .env   # add your API keys (see Configuration section)
 
 ```bash
 python3 desktop.py
+# or if installed:
+hollali-desktop
 ```
 
-Launches the system tray icon, main chat window, and optional overlay. Minimize to tray instead of quitting. Access all features via toolbar or tray menu.
+Launches the system tray icon, main chat window, and optional overlay. Minimize to tray instead of quitting. Access all features via the side navigation panel or tray menu.
 
 ### Terminal / Text mode
 
 ```bash
 python3 main.py --text
+# or if installed:
+hollali --text
 ```
 
 Type commands directly. Type `exit` to quit.
@@ -90,6 +99,8 @@ Type commands directly. Type `exit` to quit.
 
 ```bash
 python3 main.py
+# or if installed:
+hollali
 ```
 
 Say **"Hollali"** to activate. Then speak your command. The assistant listens continuously with an 8-second silence timeout per utterance.
@@ -110,7 +121,7 @@ All configuration is via `.env` file (copy from `.env.example`):
 | `TTS_ENGINE` | `piper` | Text-to-speech engine: `piper`, `espeak`, or `pyttsx3` |
 | `LLM_ENABLED` | `true` | Enable local LLM for natural conversation |
 | `LLM_MODEL` | `qwen:latest` | Ollama model name |
-| `LLM_API_URL` | `http://localhost:11434/api/generate` | Ollama API endpoint |
+| `LLM_API_URL` | `http://localhost:11434/api/chat` | Ollama API endpoint |
 | `CONVERSATION_TIMEOUT` | `8` | Seconds of silence before ending conversation |
 
 ### API keys (optional — feature-specific)
@@ -126,8 +137,7 @@ All configuration is via `.env` file (copy from `.env.example`):
 | `TWILIO_AUTH_TOKEN` | Twilio | SMS messaging |
 | `TWILIO_FROM_NUMBER` | Twilio | SMS messaging |
 | `TWILIO_TO_NUMBER` | Twilio | SMS messaging |
-| `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Google Calendar | Calendar integration |
-| `CHROME_DRIVER_PATH` | Selenium | Pizza ordering (deprecated) |
+| `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Google Calendar | Calendar integration (resolved to `~/.hollali/` if relative) |
 
 ### Switching STT/TTS at runtime
 
@@ -144,13 +154,16 @@ In the desktop GUI, open **Settings** (toolbar or tray menu) and select the desi
 
 ### Main Window
 
-- **Toolbar** — Start/Stop mic, Overlay, History, **Quick Actions**, Theme, Settings
+- **Side navigation** — collapsible panel (Ctrl+B) with mic toggle, view options, quick actions, system controls, and settings
 - **Quick Actions** — one-click buttons for common commands:
   Weather, News, Joke, Time, Date, Volume Up/Down, Screenshot, Lock
-- **Chat area** — colored messages (blue=you, green=Hollali), scrollable
+- **Chat bubbles** — colored messages (blue=you, dark=Hollali) with copy and speak buttons
+- **Streaming text** — LLM responses appear incrementally as they're generated
+- **Thinking indicator** — animated dots while the LLM processes
+- **Cancel button** — stop an in-flight LLM response
 - **Waveform** — 24-bar animated audio level meter
 - **Partial text** — live STT recognition preview (italic, fades after 3s)
-- **Text input** — type commands with `Ctrl+Enter` or click Send
+- **Text input** — type commands with `Enter` or click Send
 - **History panel** — browse past conversation sessions from SQLite
 
 ### Overlay Mode
@@ -167,7 +180,8 @@ In the desktop GUI, open **Settings** (toolbar or tray menu) and select the desi
 | `Ctrl+Q` | Quit application |
 | `Ctrl+M` | Toggle microphone listening |
 | `Ctrl+,` | Open settings |
-| `Ctrl+Enter` | Send typed command |
+| `Ctrl+B` | Toggle side navigation panel |
+| `Enter` | Send typed command |
 | `Escape` | Minimize window / hide overlay |
 
 ### Settings Dialog
@@ -188,10 +202,10 @@ All commands work in both terminal and desktop modes. Voice commands route throu
 | **System** | "volume [0-100]", "brightness [0-100]", "screenshot", "lock" |
 | **Greetings** | "hello", "hi", "hey", "how are you", "what's your name" |
 | **Time/Date** | "what time is it", "what is the date" |
-| **Weather** | "weather in [city]" |
+| **Weather** | "weather in [city]" or "weather [city]" |
 | **News** | "latest news", "news headlines" |
 | **Jokes** | "tell me a joke" |
-| **Wikipedia** | "who is [person]" |
+| **Wikipedia** | "who is [person]" or "search wikipedia for [topic]" |
 | **WolframAlpha** | "what is [query]", "calculate [expression]" |
 | **Email** | "send email to [name]" |
 | **Notes** | "make a note", "take a note" |
@@ -202,6 +216,7 @@ All commands work in both terminal and desktop modes. Voice commands route throu
 | **Music** | "play some music" |
 | **Change background** | "change my wallpaper", "change background" |
 | **Pizza** | "order pizza" (deprecated — website changed) |
+| **Speak** | "say [phrase]", "speak [phrase]", "talk [phrase]" |
 
 If no keyword matches, the LLM handles the request as a conversational query.
 
@@ -275,11 +290,11 @@ plugins/          Drop-in plugin directory
 
 **LLM not responding** — Ensure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull qwen:latest`).
 
-**Brightness control not working** — Only works with ACPI/Intel backlight (`/sys/class/backlight/intel_backlight`). NVIDIA GPU backlights are typically read-only.
+**Brightness control not working** — Only works with ACPI/Intel backlight (`/sys/class/backlight/intel_backlight`). NVIDIA GPU backlights are typically read-only. May require `video` group membership or root.
 
 **Screenshot not working** — Requires a running X display server. Fails in headless/SSH sessions.
 
-**Desktop app tray icon not visible** — On GNOME/Wayland, install `libappindicator-gtk3` or use the `gnome-shell-extension-appindicator` extension.
+**Desktop app tray icon not visible** — On GNOME/Wayland, install `libappindicator-gtk3` or use the `gnome-shell-extension-appindicator` extension. A warning is logged at startup when Wayland is detected.
 
 ## License
 
