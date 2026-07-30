@@ -313,15 +313,17 @@ class ChatBubble(QtWidgets.QFrame):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        bg = palette["user_bubble"] if is_user else palette["asst_bubble"]
-        self.setObjectName("chatBubble")
-        self.setStyleSheet(f"""
-            #chatBubble {{
-                background: {bg};
-                border-radius: 16px;
-                border-bottom-{'right' if is_user else 'left'}-radius: 4px;
-            }}
-        """)
+        if is_user:
+            self.setObjectName("chatBubble")
+            self.setStyleSheet(f"""
+                #chatBubble {{
+                    background: {palette["user_bubble"]};
+                    border-radius: 16px;
+                    border-bottom-right-radius: 4px;
+                }}
+            """)
+        else:
+            self.setStyleSheet("background: transparent; border: none;")
 
     def set_bubble_width(self, container_width: int):
         ratio = 0.60 if self._is_user else 0.80
@@ -337,14 +339,16 @@ class ChatBubble(QtWidgets.QFrame):
 
     def update_theme(self, palette: dict):
         self._palette = palette
-        bg = palette["user_bubble"] if self._is_user else palette["asst_bubble"]
-        self.setStyleSheet(f"""
-            #chatBubble {{
-                background: {bg};
-                border-radius: 16px;
-                border-bottom-{'right' if self._is_user else 'left'}-radius: 4px;
-            }}
-        """)
+        if self._is_user:
+            self.setStyleSheet(f"""
+                #chatBubble {{
+                    background: {palette["user_bubble"]};
+                    border-radius: 16px;
+                    border-bottom-right-radius: 4px;
+                }}
+            """)
+        else:
+            self.setStyleSheet("background: transparent; border: none;")
         sender_label = self.layout().itemAt(0).widget()
         sender_color = "#ffffff" if self._is_user else palette["accent"]
         sender_label.setStyleSheet(
