@@ -1,228 +1,210 @@
 # Hollali — Voice Assistant
 
-A modular, offline-capable voice assistant with both **terminal** and **desktop GUI** interfaces. Hollali supports local LLM integration (Ollama), system controls, plugins, conversation memory, and multiple speech I/O engines.
+A modular, offline-capable voice assistant with a modern **desktop GUI** (PySide6) and **terminal** interface. Hollali integrates local LLM inference via Ollama, system controls, a plugin system, conversation memory, and multiple speech I/O engines. The desktop UI is inspired by ChatGPT and Claude — clean chat bubbles, streaming responses, dark/light themes, and a collapsible side navigation panel.
 
 ## Features
 
-- **Wake-word activation** — say "Hollali" to start a conversation
-- **Continuous conversation** — listens with configurable silence timeout (default 8s)
-- **Local LLM** — Ollama integration (`qwen:latest` or any installed model) for natural language understanding and chat
-- **Dual interfaces** — terminal/text mode (`--text`) or full desktop GUI
-- **Desktop GUI** — system tray icon, main chat window, compact overlay mode
-- **Speech-to-text** — Google STT (online) or Vosk (offline, auto-downloads small model)
+- **Wake-word activation** — say "Hollali" to start a conversation, then speak naturally
+- **Continuous conversation** — configurable silence timeout (default 8s); say "stop listening" or "that's all" to return to idle
+- **Local LLM** — Ollama integration for natural language understanding, tool dispatch, and chat (any installed model)
+- **Dual interfaces** — full desktop GUI (recommended) or terminal text/voice mode
+- **Desktop GUI** — system tray icon, main chat window with side navigation, compact overlay widget
+- **Speech-to-text** — Google STT (online) or Vosk (offline, auto-downloads small model on first use)
 - **Text-to-speech** — Piper TTS (default), espeak-ng, or pyttsx3
-- **System controls** — volume (pulseaudio), screen lock, screenshot, brightness
-- **Plugin system** — drop `.py` files into `plugins/` directory with `name`, `keywords`, and `handle(text)`
-- **Conversation memory** — last 5 exchanges per session, persisted in SQLite across restarts
-- **WolframAlpha**, weather, news, Wikipedia, email (Gmail), SMS (Twilio), Google Calendar, notes
-- **Live STT preview** — partial recognition results shown in GUI
-- **Audio waveform** — animated level meter in the desktop window
-- **Conversation history** — browse past sessions from the SQLite database
-- **Theme support** — dark/light toggle, persisted
-- **Auto-start** — optional launch at login via settings
-- **Structured logging** — file + console logging via `log.py`, replacing `print()`
+- **System controls** — volume (PulseAudio), screen lock, screenshot (ImageMagick), brightness (ACPI backlight)
+- **Plugin system** — drop `.py` files into `plugins/` for custom capabilities
+- **Conversation memory** — last 20 exchanges per session, persisted in SQLite across restarts
+- **Tool dispatch** — LLM intelligently routes requests to built-in handlers (weather, news, email, calendar, etc.)
+- **Streaming responses** — LLM output appears incrementally as it's generated
+- **Dark/light themes** — toggle persisted to SQLite
+- **76 automated tests** — covering commands, database, speech, plugins, system control, utils, and config
+- **Structured logging** — file + console via `log.py`
 
 ## Requirements
 
 - **Python** 3.11+
-- **Ollama** — for local LLM (install separately from [ollama.ai](https://ollama.ai))
+- **Ollama** — for local LLM ([ollama.ai](https://ollama.ai))
 - **PyAudio** — for Google STT (`portaudio-devel` + `pyaudio` pip package)
-- **Piper TTS** — default speech engine (see installation instructions below)
-- **espeak-ng** — optional fallback TTS (install via system package manager)
+- **Piper TTS** — default speech engine
+- **espeak-ng** — optional fallback TTS
 
-## Installation
+## Quick Start
 
 ```bash
-# Clone or navigate to the project directory
-cd /home/hollali/Projects/hollali-ai
-
-# Install system dependencies (Fedora)
-sudo dnf install -y portaudio-devel  # required for PyAudio
-# espeak-ng is optional: sudo dnf install -y espeak-ng
+# Install system dependencies (Fedora example)
+sudo dnf install -y portaudio-devel espeak-ng
 
 # Install Python packages
-pip install --user --break-system-packages \
-  python-dotenv SpeechRecognition pyttsx3 pyjokes wikipedia \
-  wolframalpha twilio requests google-api-python-client \
-  google-auth-oauthlib google-auth vosk sounddevice pydub \
-  numpy PySide6 pyaudio
+pip install -r requirements.txt
+# or editable install
+pip install -e .
 
-# Or use requirements.txt
-pip install --user --break-system-packages -r requirements.txt
-
-# Install Piper TTS (default speech engine)
+# Install Piper TTS
 mkdir -p ~/.local/bin
-# Download piper_linux_x86_64.tar.gz from
-#   https://github.com/rhasspy/piper/releases
-# and extract so the `piper` binary is at ~/.local/bin/piper
+# Download piper_linux_x86_64.tar.gz from https://github.com/rhasspy/piper/releases
 tar xzf piper_linux_x86_64.tar.gz -C ~/.local/bin/
 mkdir -p ~/.local/share/piper-tts/voices
 # Download en_US-lessac-medium.onnx + .json from
-#   https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium
-# and place both files in ~/.local/share/piper-tts/voices/
+#   https://huggingface.co/rhasspy/piper-voices
+# and place both in ~/.local/share/piper-tts/voices/
 
-# Set up your .env file
+# Configure environment
 cp .env.example .env
-nano .env   # add your API keys (see Configuration section)
+# Edit .env with your API keys (optional — only needed for specific features)
 
-# Or install as a package (editable mode)
-pip install -e .
+# Launch desktop app
+hollali-desktop
 ```
-
-> **Note:** `--break-system-packages` may be needed on systems using PEP 668 (externally managed Python). Use a virtual environment if preferred.
->
-> After `pip install -e .`, the `hollali` and `hollali-desktop` commands are available globally.
 
 ## Usage
 
 ### Desktop GUI (recommended)
 
 ```bash
-python3 desktop.py
-# or if installed:
-hollali-desktop
+hollali-desktop    # or python3 desktop.py
 ```
 
-Launches the system tray icon, main chat window, and optional overlay. Minimize to tray instead of quitting. Access all features via the side navigation panel or tray menu.
+Launches a system tray icon and the main chat window. The interface is divided into:
 
-### Terminal / Text mode
+- **Side navigation** (collapsible with `Ctrl+B`) — new chat, conversation history, theme toggle, settings
+- **Chat area** — streaming AI responses, user messages, thinking indicator, waveform visualizer
+- **Input bar** — type your message or click the mic button for voice input
 
-```bash
-python3 main.py --text
-# or if installed:
-hollali --text
-```
-
-Type commands directly. Type `exit` to quit.
+Minimize to tray instead of quitting — click the tray icon to restore.
 
 ### Terminal / Voice mode
 
 ```bash
-python3 main.py
-# or if installed:
-hollali
+hollali            # or python3 main.py
 ```
 
-Say **"Hollali"** to activate. Then speak your command. The assistant listens continuously with an 8-second silence timeout per utterance.
+Say **"Hollali"** to activate, then speak your command. The assistant listens continuously with an 8-second silence timeout.
+
+### Terminal / Text mode
+
+```bash
+hollali --text     # or python3 main.py --text
+```
+
+Type commands directly. Type `exit` to quit.
 
 ### Wake-word flow
 
-1. **Idle** — listens for the wake word "Hollali" on repeat
-2. **Conversation** — after wake word, listens with 8s timeout. Say "stop listening", "that's all", "never mind", or "go to sleep" to return to idle
-3. **Exit** — say "exit" or "quit" to terminate
+1. **Idle** — listens for "Hollali" on repeat  
+2. **Conversation** — after wake word, listens with timeout; say "stop listening", "that's all", or "never mind" to return to idle  
+3. **Exit** — say "exit" or "quit", or press `Ctrl+C`
 
-## Configuration
-
-All configuration is via `.env` file (copy from `.env.example`):
-
-| Variable | Default | Description |
-|---|---|---|
-| `STT_ENGINE` | `google` | Speech-to-text engine: `google` or `vosk` |
-| `TTS_ENGINE` | `piper` | Text-to-speech engine: `piper`, `espeak`, or `pyttsx3` |
-| `LLM_ENABLED` | `true` | Enable local LLM for natural conversation |
-| `LLM_MODEL` | `qwen:latest` | Ollama model name |
-| `LLM_API_URL` | `http://localhost:11434/api/chat` | Ollama API endpoint |
-| `CONVERSATION_TIMEOUT` | `8` | Seconds of silence before ending conversation |
-
-### API keys (optional — feature-specific)
-
-| Variable | Service | Required For |
-|---|---|---|
-| `WEATHER_API_KEY` | OpenWeatherMap | Weather queries |
-| `NEWS_API_KEY` | NewsAPI | News headlines |
-| `WOLFRAM_APP_ID` | WolframAlpha | What-is / calculation queries |
-| `GMAIL_USER` | Gmail | Email sending |
-| `GMAIL_APP_PASSWORD` | Gmail (app password) | Email sending |
-| `TWILIO_ACCOUNT_SID` | Twilio | SMS messaging |
-| `TWILIO_AUTH_TOKEN` | Twilio | SMS messaging |
-| `TWILIO_FROM_NUMBER` | Twilio | SMS messaging |
-| `TWILIO_TO_NUMBER` | Twilio | SMS messaging |
-| `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Google Calendar | Calendar integration (resolved to `~/.hollali/` if relative) |
-
-### Switching STT/TTS at runtime
-
-In the desktop GUI, open **Settings** (toolbar or tray menu) and select the desired engine. In terminal mode, edit `.env` and restart.
-
-## Desktop GUI Features
-
-### System Tray
-
-- Microphone icon in the system tray
-- **Left-click** — toggle main window visibility
-- **Right-click menu** — Show Window, Start/Stop Listening, Show Overlay, Quit
-- Desktop notification when listening starts
+## Desktop GUI Deep Dive
 
 ### Main Window
 
-- **Side navigation** — collapsible panel (Ctrl+B) with mic toggle, view options, quick actions, system controls, and settings
-- **Quick Actions** — one-click buttons for common commands:
-  Weather, News, Joke, Time, Date, Volume Up/Down, Screenshot, Lock
-- **Chat bubbles** — colored messages (blue=you, dark=Hollali) with copy and speak buttons
-- **Streaming text** — LLM responses appear incrementally as they're generated
-- **Thinking indicator** — animated dots while the LLM processes
-- **Cancel button** — stop an in-flight LLM response
-- **Waveform** — 24-bar animated audio level meter
-- **Partial text** — live STT recognition preview (italic, fades after 3s)
-- **Text input** — type commands with `Enter` or click Send
-- **History panel** — browse past conversation sessions from SQLite
+| Element | Description |
+|---|---|
+| **Chat bubbles** | User messages right-aligned with surface background; AI responses left-aligned with accent border. Hover to reveal Copy button |
+| **Streaming text** | AI responses appear token-by-token as the LLM generates them |
+| **Thinking indicator** | Animated dots while the LLM processes |
+| **Cancel button** | Stops an in-flight response |
+| **Mic button** | Custom-painted toggle — green when active |
+| **Send button** | Appears when text is entered; `Enter` to send |
+| **Waveform** | 20-bar animated audio level meter |
+| **Partial text** | Live STT recognition preview (italic, auto-fades after 3s) |
+| **Welcome screen** | Suggestion chips (Weather, News, Joke, Time, Date) |
+| **Toast notifications** | Fade-in/fade-out messages for events (theme change, new chat, errors) |
+
+### Side Navigation
+
+- **New Chat** — clears the conversation
+- **History list** — last 30 sessions, click to reload
+- **Theme toggle** — switches dark/light mode
+- **Settings** — STT/TTS engine, timeout, theme, auto-start
 
 ### Overlay Mode
 
-- Compact, frameless, always-on-top widget (420×90)
-- Shows listening status, last response, and live partial STT
-- Draggable (grab and move), auto-positions at top-right of screen
-- Close with ✕ button or `Escape` key
+A compact, frameless always-on-top widget showing listening status, last response, and live partial STT. Draggable, auto-positions at top-right of screen. Close with ✕ or `Escape`.
+
+### System Tray
+
+- Microphone icon
+- **Left-click** — toggle main window visibility
+- **Right-click menu** — Show Window, Start/Stop Listening, Show Overlay, Quit
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Q` | Quit application |
-| `Ctrl+M` | Toggle microphone listening |
-| `Ctrl+,` | Open settings |
-| `Ctrl+B` | Toggle side navigation panel |
-| `Enter` | Send typed command |
-| `Escape` | Minimize window / hide overlay |
+| `Ctrl+Q` | Quit |
+| `Ctrl+M` | Toggle microphone |
+| `Ctrl+,` | Settings |
+| `Ctrl+B` | Toggle sidebar |
+| `Enter` | Send message |
+| `Shift+Enter` | New line in input |
+| `Escape` | Minimize window / close overlay |
 
-### Settings Dialog
+## Configuration
 
-- STT engine (google / vosk)
-- TTS engine (piper / espeak / pyttsx3)
-- Conversation timeout (3-60 sec)
-- Theme (dark / light)
-- Auto-start at login toggle
-- Settings persisted to SQLite across restarts (`database.set_preference`)
+All configuration via `.env` (copy from `.env.example`):
+
+### Core
+
+| Variable | Default | Description |
+|---|---|---|
+| `STT_ENGINE` | `google` | `google` or `vosk` |
+| `TTS_ENGINE` | `piper` | `piper`, `espeak`, or `pyttsx3` |
+| `LLM_ENABLED` | `true` | Enable local LLM |
+| `LLM_MODEL` | `qwen:latest` | Ollama model name |
+| `LLM_API_URL` | `http://localhost:11434/api/chat` | Ollama endpoint |
+| `CONVERSATION_TIMEOUT` | `8` | Silence timeout (seconds) |
+
+### API Keys (optional — feature-specific)
+
+| Variable | Service | Required For |
+|---|---|---|
+| `WEATHER_API_KEY` | OpenWeatherMap | Weather |
+| `NEWS_API_KEY` | NewsAPI | News headlines |
+| `WOLFRAM_APP_ID` | WolframAlpha | What-is / calculate |
+| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | Gmail | Email sending |
+| `TWILIO_*` | Twilio | SMS messaging |
+| `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Google Calendar | Calendar events |
+
+### File paths
+
+| Variable | Default | Description |
+|---|---|---|
+| `PIPER_BIN_PATH` | `~/.local/bin/piper` | Piper binary |
+| `PIPER_VOICE_PATH` | `~/.local/share/piper-tts/voices/en_US-lessac-medium.onnx` | Voice model |
+| `NOTES_DIR` | `~/Documents/notes/` | Note storage |
+| `WALLPAPER_DIR` | `~/Pictures/wallpapers/` | Wallpaper images |
+| `MUSIC_DIR` | `~/Music/` | Music files |
+
+Settings changed via the GUI are persisted to SQLite and take precedence over `.env` defaults.
 
 ## Commands
 
-All commands work in both terminal and desktop modes. Voice commands route through the LLM for natural language understanding. Built-in keyword handlers (run before LLM for instant response):
+Built-in keyword handlers run before the LLM for instant response. If no keyword matches, the LLM handles the query conversationally.
 
-| Category | Keywords |
+| Category | Triggers |
 |---|---|
-| **System** | "volume [0-100]", "brightness [0-100]", "screenshot", "lock" |
-| **Greetings** | "hello", "hi", "hey", "how are you", "what's your name" |
-| **Time/Date** | "what time is it", "what is the date" |
-| **Weather** | "weather in [city]" or "weather [city]" |
+| **System** | "volume 50", "brightness 75", "screenshot", "lock" |
+| **Greetings** | "hello", "hi", "how are you", "what's your name" |
+| **Time/Date** | "what time is it", "what's the date" |
+| **Weather** | "weather in London" or "weather Paris" |
 | **News** | "latest news", "news headlines" |
 | **Jokes** | "tell me a joke" |
-| **Wikipedia** | "who is [person]" or "search wikipedia for [topic]" |
-| **WolframAlpha** | "what is [query]", "calculate [expression]" |
-| **Email** | "send email to [name]" |
-| **Notes** | "make a note", "take a note" |
-| **SMS** | "send message to [name]" |
-| **Google Calendar** | "what's on my calendar" |
-| **Open** | "open [app name]" |
-| **Search** | "search YouTube for [query]", "search Google for [query]" |
-| **Music** | "play some music" |
-| **Change background** | "change my wallpaper", "change background" |
-| **Pizza** | "order pizza" (deprecated — website changed) |
-| **Speak** | "say [phrase]", "speak [phrase]", "talk [phrase]" |
-
-If no keyword matches, the LLM handles the request as a conversational query.
+| **Wikipedia** | "who is Albert Einstein" or "search wikipedia for Python" |
+| **WolframAlpha** | "what is the speed of light", "calculate 2+2" |
+| **Email** | "send email to John" (prompts for content and recipient) |
+| **Notes** | "make a note" (prompts for content) |
+| **SMS** | "send message" (prompts for content) |
+| **Calendar** | "what's on my calendar" |
+| **Open** | "open YouTube", "open Google" |
+| **Search** | "search YouTube for cats", "search Google for weather" |
+| **Music** | "play some music" (random file from `MUSIC_DIR`) |
+| **Wallpaper** | "change my wallpaper" |
+| **Sleep** | "stop listening for 10 seconds" |
 
 ## Plugin System
 
-Create a `.py` file in the `plugins/` directory with a class that exposes `name`, `keywords`, and `handle(text)`:
+Drop a `.py` file into `plugins/` with a class exposing `name`, `keywords`, and `handle(text)`:
 
 ```python
 class Example:
@@ -232,69 +214,108 @@ class Example:
         return "This is an example plugin. It works!"
 ```
 
-Plugins are auto-discovered at startup and matched before other handlers.
+Plugins are auto-discovered at startup and matched before built-in keyword handlers.
 
 ## Architecture
 
 ```
+# Entry points
 main.py           CLI entry point (text + voice modes)
-desktop.py        GUI entry point (PySide6 — tray, window, overlay)
+desktop.py        GUI entry point (PySide6)
+
+# Core
 config.py         .env-based configuration
-speech.py         STT (Google/Vosk) + TTS (Piper/espeak/pyttsx3)
-commands.py       All command handlers + LLM routing
-llm.py            Ollama LLM integration, conversation memory
-log.py            Structured logging (file + console, replaces print())
+constants.py      Shared constants (end-conversation phrases)
+log.py            Structured logging (file + console)
 database.py       SQLite persistence (conversations, notes, preferences)
-utils.py          Cross-platform helpers (date, email, notes, apps)
+
+# Speech I/O
+speech.py         STT (Google/Vosk) + TTS (Piper/espeak/pyttsx3)
+
+# Intelligence
+llm.py            Ollama integration, conversation manager, tool dispatch
+commands.py       Built-in command handlers + LLM routing
 system_control.py System commands (volume, brightness, screenshot, lock)
+
+# Extensibility
 plugin_loader.py  Auto-discovers and loads plugins
 plugins/          Drop-in plugin directory
+
+# Utilities
+utils.py          Cross-platform helpers (date, email, notes, apps)
+
+# Desktop UI (PySide6)
+ui/
+├── main_window.py     Main chat window, layout, signal wiring
+├── tray.py            System tray icon and menu
+├── navigation.py      Side navigation panel
+├── widgets.py         ChatBubble, ChatView, WelcomeWidget, MicButton,
+│                      ThinkingIndicator, ToastWidget, WaveformWidget
+├── overlay.py         Compact overlay widget
+├── dialogs.py         Settings dialog
+├── threads.py         Background QThreads (audio engine, text command)
+└── theming.py         Dark/light palette + Qt stylesheet generation
+
+# Tests
+tests/
+├── test_commands.py       28 tests
+├── test_database.py       12 tests
+├── test_config.py          5 tests
+├── test_plugin_loader.py   5 tests
+├── test_speech.py          6 tests
+├── test_system_control.py  7 tests
+└── test_utils.py           8 tests
 ```
 
+### Data flow (desktop GUI)
+
 ```
-                        ┌──────────────┐
-                        │  main.py /   │
-                        │  desktop.py  │
-                        └──────┬───────┘
-                               │
-                    ┌──────────┴──────────┐
-                    │   commands.py        │
-                    │   (dispatches to     │
-                    │    handlers / LLM)   │
-                    └──────────┬──────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          │                    │                    │
-    ┌─────┴─────┐       ┌─────┴─────┐       ┌──────┴──────┐
-    │ speech.py │       │  llm.py   │       │  plugins /  │
-    │ STT + TTS │       │  Ollama   │       │  system_ctl │
-    └───────────┘       └───────────┘       └─────────────┘
-          │
-    ┌─────┴─────┐
-    │ config.py │
-    │ log.py    │
-    │ database  │
-    │ utils.py  │
-    └───────────┘
+EngineThread (QThread)           TextCommandThread (QThread)
+    │                                   │
+    ├─ rec_audio() → STT                ├─ process_command_stream()
+    │       │                           │       │
+    │       ├─ partial_text ─────┐      │       ├─ chunk → MainWindow
+    │       ├─ audio_level ──┐   │      │       └─ done  → MainWindow
+    │       └─ final text   ──┼───┤      │
+    │                         │   │      │
+    ├─ call() → wake word?    │   │      │
+    ├─ process_command() ─────┘   │      │
+    │       │                     │      │
+    │       ├─ talk_async() ──────┘      │
+    │       └─ response_ready ────┐      │
+    │                              │      │
+    └─ status_changed ──────────┐ │      │
+                                │ │      │
+MainWindow (Qt main thread) ◄──┘─┘──────┘
+    │
+    ├─ ChatView (QScrollArea)
+    ├─ ChatBubble updates
+    ├─ ThinkingIndicator start/stop
+    ├─ WaveformWidget.set_level()
+    └─ ToastWidget.show_message()
 ```
 
 ## Troubleshooting
 
-**"Could not find PyAudio"** — Install `portaudio-devel` (system) + `pyaudio` (pip), or switch to Vosk STT (`STT_ENGINE=vosk` in `.env`).
-
-**"ModuleNotFoundError: No module named 'dotenv'"** — Install `python-dotenv`: `pip install python-dotenv`.
-
-**No microphone / audio input** — Check PulseAudio/ALSA: `pactl info`, `arecord -l`. The app falls back to Vosk if PyAudio is unavailable.
-
-**espeak-ng not found** — Install it: `sudo dnf install espeak-ng` (Fedora) or `sudo apt install espeak-ng` (Debian/Ubuntu). Hollali defaults to Piper TTS; espeak-ng is only needed if you select `espeak` as the TTS engine.
+**PyAudio not found** — Install `portaudio-devel` + `pyaudio`, or switch to Vosk (`STT_ENGINE=vosk` in `.env`).
 
 **LLM not responding** — Ensure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull qwen:latest`).
 
-**Brightness control not working** — Only works with ACPI/Intel backlight (`/sys/class/backlight/intel_backlight`). NVIDIA GPU backlights are typically read-only. May require `video` group membership or root.
+**Desktop tray icon not visible** — On GNOME/Wayland, install `libappindicator-gtk3` or the `gnome-shell-extension-appindicator` extension.
 
-**Screenshot not working** — Requires a running X display server. Fails in headless/SSH sessions.
+**Brightness not working** — Requires ACPI/Intel backlight (`/sys/class/backlight/intel_backlight`). May need `video` group membership.
 
-**Desktop app tray icon not visible** — On GNOME/Wayland, install `libappindicator-gtk3` or use the `gnome-shell-extension-appindicator` extension. A warning is logged at startup when Wayland is detected.
+**Screenshot not working** — Requires a running X display server with ImageMagick's `import` command installed.
+
+## Contributing
+
+```bash
+# Run tests
+python -m pytest tests/
+
+# Check code style
+ruff check .
+```
 
 ## License
 

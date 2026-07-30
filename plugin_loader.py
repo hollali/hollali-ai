@@ -4,6 +4,7 @@ import importlib.util
 import inspect
 import sys
 from pathlib import Path
+from typing import Callable
 
 from log import logger
 
@@ -12,11 +13,11 @@ _loaded_plugins: list[object] = []
 _PLUGIN_TIMEOUT = 5
 
 
-def _run_with_timeout(fn, text: str, timeout: int) -> str | None:
+def _run_with_timeout(fn: Callable[[str], str | None], text: str, timeout: int) -> str | None:
     result: list[str | None] = [None]
     exc: list[BaseException | None] = [None]
 
-    def worker():
+    def worker() -> None:
         try:
             result[0] = str(fn(text) or "")
         except BaseException as e:

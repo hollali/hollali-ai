@@ -72,7 +72,7 @@ def send_email(to: str, content: str) -> None:
 def note(text: str) -> None:
     date = datetime.datetime.now()
     file_name = str(date).replace(":", "-") + "-note.txt"
-    notes_dir = Path.home() / "Documents" / "AssistantNotes"
+    notes_dir = Path(config.NOTES_DIR)
     notes_dir.mkdir(parents=True, exist_ok=True)
     file_path = notes_dir / file_name
 
@@ -102,7 +102,7 @@ def _change_bg_linux(image_path: str) -> bool:
 
 
 def change_background(text: str) -> None:
-    img_dir = Path.home() / "Pictures" / "Wallpapers"
+    img_dir = Path(config.WALLPAPER_DIR)
     if not img_dir.exists():
         talk(f"Wallpaper directory not found at {img_dir}")
         return

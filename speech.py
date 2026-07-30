@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 import math
 
@@ -24,7 +25,7 @@ from log import logger
 _tts_engine = None
 
 
-def _init_pyttsx3():
+def _init_pyttsx3() -> None:
     global _tts_engine
     import pyttsx3
     _tts_engine = pyttsx3.init()
@@ -45,8 +46,8 @@ def _init_pyttsx3():
     _tts_engine.setProperty("volume", 1.0)
 
 
-_PIPER_BIN = Path.home() / ".local" / "bin" / "piper"
-_PIPER_VOICE = Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx"
+_PIPER_BIN = Path(config.PIPER_BIN_PATH)
+_PIPER_VOICE = Path(config.PIPER_VOICE_PATH)
 
 _piper_available: bool | None = None
 _piper_lock = threading.Lock()
@@ -173,7 +174,7 @@ _vosk_model = None
 _vosk_init_lock = threading.Lock()
 
 
-def _init_vosk():
+def _init_vosk() -> None:
     global _vosk_model
     if _vosk_model is not None:
         return
@@ -216,13 +217,13 @@ def _rms(data: bytes) -> float:
 
 
 def rec_audio(timeout: float | None = None, phrase_limit: float | None = None,
-              partial_cb=None, level_cb=None) -> str:
+              partial_cb: Callable[[str], None] | None = None, level_cb: Callable[[float], None] | None = None) -> str:
     if config.STT_ENGINE == "vosk":
         return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
     return _rec_google(timeout, phrase_limit)
 
 
-def _rec_vosk(timeout: float | None = None, partial_cb=None, level_cb=None) -> str:
+def _rec_vosk(timeout: float | None = None, partial_cb: Callable[[str], None] | None = None, level_cb: Callable[[float], None] | None = None) -> str:
     global _vosk_model
     if _vosk_model is None:
         _init_vosk()
@@ -233,7 +234,7 @@ def _rec_vosk(timeout: float | None = None, partial_cb=None, level_cb=None) -> s
     q: queue.Queue = queue.Queue()
     _partial_sent: list[str] = []
 
-    def callback(indata, frames, atime, status):
+    def callback(indata: Any, frames: int, atime: Any, status: Any) -> None:
         if status:
             logger.warning(f"Audio status: {status}")
         raw = bytes(indata)
@@ -295,26 +296,19 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
     recog.energy_threshold = 4000
     recog.dynamic_energy_threshold = True
 
+    import contextlib
     import os as _os
+
+    _devnull = open(_os.devnull, "w")
     try:
-        with open(_os.devnull, "w") as _null:
-            _old_stderr = sys.stderr
-            sys.stderr = _null
-            try:
-                mic = sr.Microphone()
-            finally:
-                sys.stderr = _old_stderr
+        with contextlib.redirect_stderr(_devnull):
+            mic = sr.Microphone()
 
         with mic as source:
             if timeout is None or timeout > 0:
                 adj_timeout = timeout if timeout else 1
-                with open(_os.devnull, "w") as _null:
-                    _old_stderr = sys.stderr
-                    sys.stderr = _null
-                    try:
-                        recog.adjust_for_ambient_noise(source, duration=min(0.5, adj_timeout))
-                    finally:
-                        sys.stderr = _old_stderr
+                with contextlib.redirect_stderr(_devnull):
+                    recog.adjust_for_ambient_noise(source, duration=min(0.5, adj_timeout))
             try:
                 audio = recog.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
             except sr.WaitTimeoutError:
@@ -324,6 +318,8 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
             logger.warning(f"Microphone not available ({e}), falling back to Vosk")
             config.STT_ENGINE = "vosk"
         return _rec_vosk(timeout)
+    finally:
+        _devnull.close()
 
     try:
         data = recog.recognize_google(audio)

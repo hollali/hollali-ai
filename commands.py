@@ -8,6 +8,7 @@ import random
 import sys
 import time
 import webbrowser
+from typing import Any, Generator, Literal
 
 from log import logger
 from pathlib import Path
@@ -22,6 +23,8 @@ import system_control
 import utils
 import wikipedia
 from speech import talk, talk_async, rec_audio
+
+_http = requests.Session()
 
 
 def handle_hello(text: str) -> str:
@@ -107,7 +110,7 @@ def handle_weather(text: str) -> str:
     url = f"https://api.openweathermap.org/data/2.5/weather?appid={config.WEATHER_API_KEY}&q={location}"
 
     try:
-        js = requests.get(url).json()
+        js = _http.get(url, timeout=10).json()
     except requests.RequestException:
         return " Could not fetch weather data. Please check your connection."
 
@@ -147,15 +150,18 @@ def handle_about(text: str) -> str:
 
 
 def handle_sleep(text: str) -> str:
-    if "don't listen" in text or "stop listening" in text or "do not listen" in text:
-        talk("for how many seconds do you want me to sleep")
-        try:
-            a = int(rec_audio(timeout=10))
-        except (ValueError, TypeError):
-            return " I didn't understand the number."
-        time.sleep(a)
-        return f" {a} seconds completed. Now you can ask me anything"
-    return ""
+    if "don't listen" not in text and "stop listening" not in text and "do not listen" not in text:
+        return ""
+    talk("For how many seconds do you want me to sleep?")
+    try:
+        raw = rec_audio(timeout=10)
+        a = int(raw.strip()) if raw else 0
+    except (ValueError, TypeError, AttributeError):
+        return " I didn't understand the number."
+    if a <= 0:
+        return " I need a positive number of seconds."
+    time.sleep(a)
+    return f" {a} seconds completed. Now you can ask me anything"
 
 
 def handle_change_background(text: str) -> str:
@@ -218,7 +224,7 @@ def handle_play_music(text: str) -> str:
     if "play music" not in text and "play song" not in text:
         return ""
 
-    music_dir = Path.home() / "Music"
+    music_dir = Path(config.MUSIC_DIR)
     if not music_dir.exists():
         return " Music directory not found"
 
@@ -300,7 +306,7 @@ def handle_news(text: str) -> str:
     url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={config.NEWS_API_KEY}"
 
     try:
-        response = requests.get(url)
+        response = _http.get(url, timeout=10)
         response.raise_for_status()
     except requests.RequestException:
         return " Please check your connection"
@@ -399,7 +405,7 @@ def handle_google_calendar(text: str) -> str:
     return ""
 
 
-def _get_calendar_service():
+def _get_calendar_service() -> Any:
     from google.auth.transport.requests import Request
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
@@ -428,7 +434,7 @@ def _get_calendar_service():
     return build("calendar", "v3", credentials=creds)
 
 
-def _calendar_events(num: int, service) -> None:
+def _calendar_events(num: int, service: Any) -> None:
     from googleapiclient.discovery import Resource
 
     talk("Hey there! Good Day. Hope you are doing fine. These are the events to do today")
@@ -479,31 +485,31 @@ _load_plugins()
 
 
 COMMAND_HANDLERS: dict[str, dict] = {
-    "handle_exit": {"fn": handle_exit, "early": True},
-    "handle_speak": {"fn": handle_speak, "early": False},
-    "handle_hello": {"fn": lambda t: handle_hello(t) or handle_about(t), "early": False},
-    "handle_date": {"fn": handle_date, "early": False},
-    "handle_time": {"fn": handle_time, "early": False},
-    "handle_wikipedia": {"fn": handle_wikipedia, "early": False},
-    "handle_where_is": {"fn": handle_where_is, "early": False},
-    "handle_weather": {"fn": handle_weather, "early": False},
-    "handle_sleep": {"fn": handle_sleep, "early": False},
-    "handle_change_background": {"fn": handle_change_background, "early": False},
-    "handle_open": {"fn": handle_open, "early": False},
-    "handle_youtube_search": {"fn": handle_youtube_search, "early": False},
-    "handle_google_search": {"fn": handle_google_search, "early": False},
-    "handle_play_music": {"fn": handle_play_music, "early": False},
-    "handle_joke": {"fn": handle_joke, "early": False},
-    "handle_email": {"fn": handle_email, "early": False},
-    "handle_make_note": {"fn": handle_make_note, "early": False},
-    "handle_news": {"fn": handle_news, "early": False},
-    "handle_send_message": {"fn": handle_send_message, "early": False},
-    "handle_calculate": {"fn": handle_calculate, "early": False},
-    "handle_what_is": {"fn": handle_what_is, "early": False},
-    "handle_google_calendar": {"fn": handle_google_calendar, "early": False},
-    "handle_pizza": {"fn": handle_pizza, "early": False},
-    "handle_system": {"fn": system_control.handle_system_command, "early": False},
-    "handle_plugins": {"fn": _handle_plugins, "early": False},
+    "handle_exit": {"fn": handle_exit},
+    "handle_speak": {"fn": handle_speak},
+    "handle_hello": {"fn": lambda t: handle_hello(t) or handle_about(t)},
+    "handle_date": {"fn": handle_date},
+    "handle_time": {"fn": handle_time},
+    "handle_wikipedia": {"fn": handle_wikipedia},
+    "handle_where_is": {"fn": handle_where_is},
+    "handle_weather": {"fn": handle_weather},
+    "handle_sleep": {"fn": handle_sleep},
+    "handle_change_background": {"fn": handle_change_background},
+    "handle_open": {"fn": handle_open},
+    "handle_youtube_search": {"fn": handle_youtube_search},
+    "handle_google_search": {"fn": handle_google_search},
+    "handle_play_music": {"fn": handle_play_music},
+    "handle_joke": {"fn": handle_joke},
+    "handle_email": {"fn": handle_email},
+    "handle_make_note": {"fn": handle_make_note},
+    "handle_news": {"fn": handle_news},
+    "handle_send_message": {"fn": handle_send_message},
+    "handle_calculate": {"fn": handle_calculate},
+    "handle_what_is": {"fn": handle_what_is},
+    "handle_google_calendar": {"fn": handle_google_calendar},
+    "handle_pizza": {"fn": handle_pizza},
+    "handle_system": {"fn": system_control.handle_system_command},
+    "handle_plugins": {"fn": _handle_plugins},
 }
 
 
@@ -545,7 +551,7 @@ def process_command(text: str) -> str:
     return "I didn't understand that."
 
 
-def process_command_stream(text: str):
+def process_command_stream(text: str) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
     """Generator yielding ("chunk", partial_text) or ("done", final_text)."""
     _run_handlers(text, ["handle_exit"])
 

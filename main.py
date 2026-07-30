@@ -3,14 +3,13 @@ from __future__ import annotations
 import sys
 import threading
 import time
-from queue import Queue
+from queue import Empty, Queue
 
 import config
 from commands import process_command
+from constants import END_CONVERSATION
 from log import logger
 from speech import call, rec_audio, talk
-
-END_CONVERSATION = ("stop listening", "that's all", "never mind", "go to sleep", "shut up")
 
 # ---------------------------------------------------------------------------
 # TUI / Text mode
@@ -94,12 +93,12 @@ def _get_input(timeout: float | None = None) -> str | None:
     if timeout:
         try:
             return _command_queue.get(timeout=timeout)
-        except __import__("queue").Empty:
+        except Empty:
             return None
     while not _exit_event.is_set():
         try:
             return _command_queue.get(timeout=0.5)
-        except __import__("queue").Empty:
+        except Empty:
             continue
     return None
 

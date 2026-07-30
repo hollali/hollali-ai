@@ -3,19 +3,37 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 DB_PATH = Path.home() / ".hollali" / "hollali.db"
 _local = threading.local()
+_cleanup_lock = threading.Lock()
+_connections: set[sqlite3.Connection] = set()
 
 
 def _get_conn() -> sqlite3.Connection:
     if not hasattr(_local, "conn") or _local.conn is None:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _local.conn = sqlite3.connect(str(DB_PATH))
+        _local.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         _local.conn.row_factory = sqlite3.Row
         _local.conn.execute("PRAGMA journal_mode=WAL")
         _local.conn.execute("PRAGMA busy_timeout=5000")
+        _local.conn.execute("PRAGMA synchronous=NORMAL")
+        with _cleanup_lock:
+            _connections.add(_local.conn)
     return _local.conn
+
+
+def close_connections() -> None:
+    with _cleanup_lock:
+        for conn in _connections:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _connections.clear()
+    if hasattr(_local, "conn"):
+        _local.conn = None
 
 
 def init_db() -> None:
@@ -40,6 +58,8 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_session
                 ON conversations(session_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_conversations_created
+                ON conversations(created_at);
         """)
 
 
@@ -86,7 +106,7 @@ def save_note(title: str, content: str) -> int:
         return cur.lastrowid
 
 
-def list_notes(limit: int = 10) -> list[dict]:
+def list_notes(limit: int = 10) -> list[dict[str, Any]]:
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT id, title, content, created_at FROM notes ORDER BY created_at DESC LIMIT ?",
@@ -95,10 +115,10 @@ def list_notes(limit: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def list_sessions(limit: int = 30) -> list[dict]:
+def list_sessions(limit: int = 30) -> list[dict[str, Any]]:
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT session_id, MAX(created_at) as last "
+            "SELECT session_id, MAX(created_at) as last "
             "FROM conversations GROUP BY session_id ORDER BY last DESC LIMIT ?",
             (limit,),
         ).fetchall()

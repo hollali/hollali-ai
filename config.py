@@ -45,6 +45,13 @@ STT_ENGINE = _getenv("STT_ENGINE", "google")
 VOSK_MODEL_PATH = _getenv("VOSK_MODEL_PATH", "")
 
 TTS_ENGINE = _getenv("TTS_ENGINE", "piper")
+
+PIPER_BIN_PATH = _getenv("PIPER_BIN_PATH", str(Path.home() / ".local" / "bin" / "piper"))
+PIPER_VOICE_PATH = _getenv("PIPER_VOICE_PATH", str(Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx"))
+NOTES_DIR = _getenv("NOTES_DIR", str(Path.home() / "Documents" / "AssistantNotes"))
+WALLPAPER_DIR = _getenv("WALLPAPER_DIR", str(Path.home() / "Pictures" / "Wallpapers"))
+MUSIC_DIR = _getenv("MUSIC_DIR", str(Path.home() / "Music"))
+
 TUI_MODE = False
 
 
