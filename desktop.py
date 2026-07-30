@@ -283,7 +283,7 @@ class ChatBubble(QtWidgets.QFrame):
         text_color = "white" if is_user else palette["text"]
         self.text_label = QtWidgets.QLabel(text)
         self.text_label.setWordWrap(True)
-        self.text_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.text_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self.text_label.setStyleSheet(
             f"font-size: 14px; color: {text_color}; background: transparent;"
         )
@@ -434,6 +434,16 @@ class ChatView(QtWidgets.QScrollArea):
             bubble.set_bubble_width(cw)
         self._scroll_to_bottom()
         return bubble
+
+    def _remove_streaming_bubble(self, bubble):
+        if bubble is None:
+            return
+        for i in range(self._layout.count()):
+            item = self._layout.itemAt(i)
+            if item and item.widget() is bubble:
+                self._layout.takeAt(i)
+                bubble.deleteLater()
+                break
 
     def clear(self):
         # remove everything except welcome (idx 0) and stretch (last)
@@ -1205,6 +1215,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thinking_indicator.stop()
         self.cancel_btn.hide()
         self.input_field.setEnabled(True)
+        self.chat_view._remove_streaming_bubble(self._streaming_bubble)
         self._streaming_bubble = None
         self.toast.show_message("Command cancelled", 1500, "info")
 
