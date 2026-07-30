@@ -307,11 +307,6 @@ class ChatBubble(QtWidgets.QFrame):
         self._btn_row.addStretch()
         layout.addLayout(self._btn_row)
 
-        # Hide buttons by default; show on hover
-        self._copy_btn.hide()
-        if not is_user:
-            self._speak_btn.hide()
-
         if is_user:
             self.setObjectName("chatBubble")
             self.setStyleSheet(f"""
@@ -322,18 +317,6 @@ class ChatBubble(QtWidgets.QFrame):
             """)
         else:
             self.setStyleSheet("background: transparent; border: none;")
-
-    def enterEvent(self, event):
-        self._copy_btn.show()
-        if not self._is_user:
-            self._speak_btn.show()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._copy_btn.hide()
-        if not self._is_user:
-            self._speak_btn.hide()
-        super().leaveEvent(event)
 
     def set_bubble_width(self, container_width: int):
         if self._is_user:
@@ -1087,10 +1070,22 @@ class MainWindow(QtWidgets.QMainWindow):
         input_layout = QtWidgets.QHBoxLayout()
         input_layout.setContentsMargins(12, 4, 12, 12)
 
+        self.mic_btn = QtWidgets.QPushButton("\U0001F399")
+        self.mic_btn.setFixedSize(36, 36)
+        self.mic_btn.setToolTip("Toggle voice listening (Ctrl+M)")
+        self.mic_btn.setCheckable(True)
+        self.mic_btn.clicked.connect(self._toggle_mic)
+        self.mic_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #9ca3af; border: 1px solid #4b5563; border-radius: 18px; font-size: 16px; }"
+            "QPushButton:hover { background: #363650; color: #e5e7eb; }"
+            "QPushButton:checked { background: #22c55e; color: white; border-color: #22c55e; }"
+        )
+        input_layout.addWidget(self.mic_btn)
+
         self.input_field = QtWidgets.QLineEdit()
         self.input_field.setPlaceholderText("Type a command (Enter to send)")
         self.input_field.returnPressed.connect(self._send_text)
-        input_layout.addWidget(self.input_field)
+        input_layout.addWidget(self.input_field, 1)
 
         send_btn = QtWidgets.QPushButton("Send")
         send_btn.clicked.connect(self._send_text)
@@ -1265,6 +1260,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine.set_conversation(active)
         self.engine.status_changed.emit("conversation" if active else "idle")
 
+    def _toggle_mic(self):
+        active = not self.engine.is_conversation()
+        self._toggle_listening(active)
+
     def _on_status_changed(self, status: str):
         active = status == "conversation"
         btn = self.side_nav.listening_btn
@@ -1272,6 +1271,9 @@ class MainWindow(QtWidgets.QMainWindow):
         btn.setChecked(active)
         btn.blockSignals(False)
         btn.setText("\u23F9  Stop" if active else "\U0001F3A4  Listen")
+        self.mic_btn.blockSignals(True)
+        self.mic_btn.setChecked(active)
+        self.mic_btn.blockSignals(False)
 
     def _on_engine_error(self, error: str):
         self.toast.show_error(error)
