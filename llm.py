@@ -14,7 +14,8 @@ from log import logger
 
 LLM_API_URL = config.LLM_API_URL
 LLM_MODEL = config.LLM_MODEL
-MAX_HISTORY = 8
+MAX_HISTORY = 20
+LLM_NUM_CTX = 8192
 
 _SESSION_ID: str | None = None
 
@@ -55,24 +56,40 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 TOOL_NAMES = list(TOOL_DESCRIPTIONS.keys())
 
 
-def _build_system_prompt() -> str:
+def _build_tool_system_prompt() -> str:
     now = datetime.datetime.now()
     date_str = now.strftime("%A, %B %d, %Y")
-
     tools_short = ", ".join(TOOL_NAMES)
 
-    return f"""You are Hollali, a voice assistant. Today is {date_str}. Respond in 1-2 short sentences.
+    caps = "\n".join(f"- {desc}" for desc in TOOL_DESCRIPTIONS.values())
+
+    return f"""You are Hollali, a voice assistant. Today is {date_str}.
+
+Capabilities:
+{caps}
 
 Output JSON only: {{"tool":"handler_name"}} for actions, {{"chat":"reply"}} for chatting.
-
-Tools: {tools_short}
 
 Examples:
 "hello" -> {{"tool":"handle_hello"}}
 "tell me a joke" -> {{"tool":"handle_joke"}}
 "what's the weather in London" -> {{"tool":"handle_weather"}}
 "set volume to 50%" -> {{"tool":"handle_system"}}
-"that's interesting" -> {{"chat":"Glad you liked it!"}}"""
+"what can you do" -> {{"chat":"I can check the weather, search the web, set timers, and more!"}}"""
+
+
+def _build_chat_system_prompt() -> str:
+    now = datetime.datetime.now()
+    date_str = now.strftime("%A, %B %d, %Y")
+
+    caps = "\n".join(f"- {desc}" for desc in TOOL_DESCRIPTIONS.values())
+
+    return f"""You are Hollali, an intelligent voice assistant. Today is {date_str}.
+
+Capabilities:
+{caps}
+
+Answer the user's question clearly and completely. Be concise but thorough — if the question is complex, take your time and explain well. Use natural, conversational language."""
 
 _history: list[dict] = []
 _history_lock = threading.Lock()
@@ -111,7 +128,7 @@ def _save(role: str, content: str) -> None:
 def query(user_input: str) -> tuple[Literal["tool", "chat"], str]:
     _init()
 
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    messages = [{"role": "system", "content": _build_tool_system_prompt()}]
     with _history_lock:
         messages.extend(_history)
     messages.append({"role": "user", "content": user_input})
@@ -123,9 +140,9 @@ def query(user_input: str) -> tuple[Literal["tool", "chat"], str]:
                 "model": LLM_MODEL,
                 "messages": messages,
                 "stream": False,
-                "options": {"num_ctx": 2048, "temperature": 0.2},
+                "options": {"num_ctx": LLM_NUM_CTX, "temperature": 0.2},
             },
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         raw = resp.json().get("message", {}).get("content", "").strip()
@@ -175,7 +192,7 @@ def query_stream(user_input: str):
     """Yields ("chunk", text) for each token, then ("done", intent_type, payload)."""
     _init()
 
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    messages = [{"role": "system", "content": _build_tool_system_prompt()}]
     with _history_lock:
         messages.extend(_history)
     messages.append({"role": "user", "content": user_input})
@@ -188,10 +205,10 @@ def query_stream(user_input: str):
                 "model": LLM_MODEL,
                 "messages": messages,
                 "stream": True,
-                "options": {"num_ctx": 2048, "temperature": 0.2},
+                "options": {"num_ctx": LLM_NUM_CTX, "temperature": 0.2},
             },
             stream=True,
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
 
@@ -269,7 +286,7 @@ def query_chat(user_input: str) -> str:
     """Plain-text LLM chat, no JSON parsing. Returns the response string."""
     _init()
 
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    messages = [{"role": "system", "content": _build_chat_system_prompt()}]
     with _history_lock:
         messages.extend(_history)
     messages.append({"role": "user", "content": user_input})
@@ -281,9 +298,9 @@ def query_chat(user_input: str) -> str:
                 "model": LLM_MODEL,
                 "messages": messages,
                 "stream": False,
-                "options": {"num_ctx": 2048, "temperature": 0.2},
+                "options": {"num_ctx": LLM_NUM_CTX, "temperature": 0.7},
             },
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         reply = resp.json().get("message", {}).get("content", "").strip()
@@ -306,7 +323,7 @@ def query_chat_stream(user_input: str):
     """Streaming plain-text LLM chat. Yields ("chunk", text) then ("done", text)."""
     _init()
 
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    messages = [{"role": "system", "content": _build_chat_system_prompt()}]
     with _history_lock:
         messages.extend(_history)
     messages.append({"role": "user", "content": user_input})
@@ -319,10 +336,10 @@ def query_chat_stream(user_input: str):
                 "model": LLM_MODEL,
                 "messages": messages,
                 "stream": True,
-                "options": {"num_ctx": 2048, "temperature": 0.2},
+                "options": {"num_ctx": LLM_NUM_CTX, "temperature": 0.7},
             },
             stream=True,
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         for line in resp.iter_lines():
