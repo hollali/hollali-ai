@@ -13,7 +13,7 @@ import config
 import database
 from commands import process_command, process_command_stream
 from log import logger
-from speech import call, rec_audio, talk, talk_async
+from speech import call, is_speaking, rec_audio, talk, talk_async
 
 END_CONVERSATION = ("stop listening", "that's all", "never mind", "go to sleep", "shut up")
 AUTOSTART_PATH = os.path.expanduser("~/.config/autostart/hollali-autostart.desktop")
@@ -165,6 +165,9 @@ class EngineThread(QtCore.QThread):
                 continue
 
             if not text:
+                continue
+
+            if is_speaking():
                 continue
 
             with self._lock:

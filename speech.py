@@ -124,22 +124,36 @@ def _talk_espeak(text: str) -> None:
         logger.warning(f"espeak-ng failed (rc={result.returncode}): {stderr}")
 
 
-def talk(text: str) -> None:
-    logger.info(text)
-    if config.TTS_ENGINE == "piper":
-        _talk_piper(text)
-    elif config.TTS_ENGINE == "espeak":
-        _talk_espeak(text)
-    elif _tts_engine is None:
-        _init_pyttsx3()
-        _tts_engine.say(text)
-        _tts_engine.runAndWait()
-    else:
-        _tts_engine.say(text)
-        _tts_engine.runAndWait()
-
-
 _talk_pool: concurrent.futures.ThreadPoolExecutor | None = None
+_speaking = False
+_speaking_lock = threading.Lock()
+
+
+def is_speaking() -> bool:
+    with _speaking_lock:
+        return _speaking
+
+
+def talk(text: str) -> None:
+    global _speaking
+    with _speaking_lock:
+        _speaking = True
+    try:
+        logger.info(text)
+        if config.TTS_ENGINE == "piper":
+            _talk_piper(text)
+        elif config.TTS_ENGINE == "espeak":
+            _talk_espeak(text)
+        elif _tts_engine is None:
+            _init_pyttsx3()
+            _tts_engine.say(text)
+            _tts_engine.runAndWait()
+        else:
+            _tts_engine.say(text)
+            _tts_engine.runAndWait()
+    finally:
+        with _speaking_lock:
+            _speaking = False
 
 
 def talk_async(text: str) -> None:
