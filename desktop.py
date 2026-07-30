@@ -287,15 +287,15 @@ class ChatBubble(QtWidgets.QFrame):
         self._btn_row.setContentsMargins(0, 2, 0, 0)
         self._btn_row.setSpacing(4)
 
-        self._copy_btn = QtWidgets.QPushButton("\U0001F4CB")
-        self._copy_btn.setFixedSize(22, 22)
+        self._copy_btn = QtWidgets.QPushButton("Copy")
+        self._copy_btn.setFixedHeight(22)
         self._copy_btn.setToolTip("Copy text")
         self._copy_btn.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text()))
         self._btn_row.addWidget(self._copy_btn)
 
         if not is_user:
-            self._speak_btn = QtWidgets.QPushButton("\U0001F50A")
-            self._speak_btn.setFixedSize(22, 22)
+            self._speak_btn = QtWidgets.QPushButton("Speak")
+            self._speak_btn.setFixedHeight(22)
             self._speak_btn.setToolTip("Speak this response aloud")
             self._speak_btn.clicked.connect(lambda: talk_async(self.text_label.text()))
             self._btn_row.addWidget(self._speak_btn)
@@ -328,8 +328,8 @@ class ChatBubble(QtWidgets.QFrame):
     def _style_tool_buttons(self, btn, palette=None):
         p = palette or self._palette
         btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p['text_sec']}; border: none; border-radius: 11px; font-size: 12px; }}"
-            f"QPushButton:hover {{ background: {p['surface2']}; color: {p['text']}; }}"
+            f"QPushButton {{ background: {p['surface2']}; color: {p['text_sec']}; border: none; border-radius: 11px; font-size: 11px; padding: 0 4px; }}"
+            f"QPushButton:hover {{ background: {p['border']}; color: {p['text']}; }}"
         )
 
     def update_theme(self, palette: dict):
@@ -1070,16 +1070,11 @@ class MainWindow(QtWidgets.QMainWindow):
         input_layout = QtWidgets.QHBoxLayout()
         input_layout.setContentsMargins(12, 4, 12, 12)
 
-        self.mic_btn = QtWidgets.QPushButton("\U0001F399")
-        self.mic_btn.setFixedSize(36, 36)
+        self.mic_btn = QtWidgets.QPushButton("Mic")
+        self.mic_btn.setFixedSize(44, 28)
         self.mic_btn.setToolTip("Toggle voice listening (Ctrl+M)")
         self.mic_btn.setCheckable(True)
         self.mic_btn.clicked.connect(self._toggle_mic)
-        self.mic_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #9ca3af; border: 1px solid #4b5563; border-radius: 18px; font-size: 16px; }"
-            "QPushButton:hover { background: #363650; color: #e5e7eb; }"
-            "QPushButton:checked { background: #22c55e; color: white; border-color: #22c55e; }"
-        )
         input_layout.addWidget(self.mic_btn)
 
         self.input_field = QtWidgets.QLineEdit()
@@ -1161,6 +1156,11 @@ class MainWindow(QtWidgets.QMainWindow):
             item = self.chat_view._layout.itemAt(i)
             if item and item.widget() and isinstance(item.widget(), ChatBubble):
                 item.widget().update_theme(palette)
+        self.mic_btn.setStyleSheet(
+            f"QPushButton {{ background: {palette['surface2']}; color: {palette['text_sec']}; border: none; border-radius: 14px; font-size: 11px; font-weight: bold; padding: 0 8px; }}"
+            f"QPushButton:hover {{ background: {palette['border']}; color: {palette['text']}; }}"
+            f"QPushButton:checked {{ background: #22c55e; color: white; }}"
+        )
 
     def _toggle_theme(self):
         current = database.get_preference("theme", "dark")
