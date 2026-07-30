@@ -91,10 +91,17 @@ def conversation_loop() -> None:
 # ---------------------------------------------------------------------------
 
 def _get_input(timeout: float | None = None) -> str | None:
-    try:
-        return _command_queue.get(timeout=timeout) if timeout else _command_queue.get()
-    except __import__("queue").Empty:
-        return None
+    if timeout:
+        try:
+            return _command_queue.get(timeout=timeout)
+        except __import__("queue").Empty:
+            return None
+    while not _exit_event.is_set():
+        try:
+            return _command_queue.get(timeout=0.5)
+        except __import__("queue").Empty:
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ LOG_PATH = Path.home() / ".hollali" / "hollali.log"
 
 
 def setup_logger(name: str = "hollali") -> logging.Logger:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 

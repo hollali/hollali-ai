@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+import threading
 from typing import Literal
 
 import requests
@@ -13,126 +14,123 @@ from log import logger
 
 LLM_API_URL = config.LLM_API_URL
 LLM_MODEL = config.LLM_MODEL
-MAX_HISTORY = 5
+MAX_HISTORY = 8
 
-SESSION_ID = datetime.datetime.now().strftime("session_%Y%m%d_%H%M%S")
+_SESSION_ID: str | None = None
 
-TOOL_NAMES = [
-    "handle_date",
-    "handle_time",
-    "handle_wikipedia",
-    "handle_where_is",
-    "handle_weather",
-    "handle_open",
-    "handle_youtube_search",
-    "handle_google_search",
-    "handle_play_music",
-    "handle_joke",
-    "handle_email",
-    "handle_make_note",
-    "handle_news",
-    "handle_send_message",
-    "handle_calculate",
-    "handle_what_is",
-    "handle_google_calendar",
-    "handle_pizza",
-    "handle_change_background",
-    "handle_sleep",
-    "handle_exit",
-    "handle_hello",
-    "handle_system",
-    "handle_plugins",
-]
 
-SYSTEM_PROMPT = f"""You are Hollali, a helpful voice assistant. You remember prior context.
+def _get_session_id() -> str:
+    global _SESSION_ID
+    if _SESSION_ID is None:
+        _SESSION_ID = datetime.datetime.now().strftime("session_%Y%m%d_%H%M%S")
+    return _SESSION_ID
 
-Classify the user's intent and respond with ONLY valid JSON, no other text.
+TOOL_DESCRIPTIONS: dict[str, str] = {
+    "handle_hello": "Greet the user",
+    "handle_date": "Get today's date",
+    "handle_time": "Get the current time",
+    "handle_weather": "Check weather for a location",
+    "handle_wikipedia": "Search Wikipedia",
+    "handle_what_is": "Look up a concept online",
+    "handle_where_is": "Show a location on Maps",
+    "handle_google_search": "Search the web",
+    "handle_youtube_search": "Search YouTube",
+    "handle_calculate": "Do math calculations",
+    "handle_joke": "Tell a joke",
+    "handle_news": "Get news headlines",
+    "handle_open": "Open an app, file, or website",
+    "handle_play_music": "Play music",
+    "handle_make_note": "Create a note",
+    "handle_email": "Send an email",
+    "handle_send_message": "Send a message",
+    "handle_system": "Volume, screenshot, lock screen",
+    "handle_change_background": "Change wallpaper",
+    "handle_google_calendar": "Check calendar events",
+    "handle_sleep": "Set a timer",
+    "handle_pizza": "Order pizza",
+    "handle_exit": "Quit the app",
+    "handle_plugins": "Plugin commands",
+}
 
-Valid tools: {", ".join(TOOL_NAMES)}
+TOOL_NAMES = list(TOOL_DESCRIPTIONS.keys())
 
-Rules:
-- If the user wants to use one of the tools, respond: {{"tool": "tool_name"}}
-- If the user is just chatting, responding conversationally, or the intent is unclear, respond: {{"chat": "your short response"}}
-- Use handle_what_is for factual questions (what is X, who is Y, how many Z, etc.)
-- Use handle_hello for greetings (hi, hello, hey, etc.)
-- Use handle_joke for joke requests
-- Use handle_weather for weather questions
-- Use handle_play_music for playing music or songs
-- Use handle_date/time for date/time questions
-- Use handle_system for volume, brightness, screenshot, lock screen
-- Use handle_plugins for custom plugin commands
+
+def _build_system_prompt() -> str:
+    now = datetime.datetime.now()
+    date_str = now.strftime("%A, %B %d, %Y")
+
+    tools_short = ", ".join(TOOL_NAMES)
+
+    return f"""You are Hollali, a voice assistant. Today is {date_str}. Respond in 1-2 short sentences.
+
+Output JSON only: {{"tool":"handler_name"}} for actions, {{"chat":"reply"}} for chatting.
+
+Tools: {tools_short}
 
 Examples:
-User: hello
-{{"tool": "handle_hello"}}
+"hello" -> {{"tool":"handle_hello"}}
+"tell me a joke" -> {{"tool":"handle_joke"}}
+"what's the weather in London" -> {{"tool":"handle_weather"}}
+"set volume to 50%" -> {{"tool":"handle_system"}}
+"that's interesting" -> {{"chat":"Glad you liked it!"}}"""
 
-User: what is the capital of France?
-{{"tool": "handle_what_is"}}
-
-User: tell me a joke
-{{"tool": "handle_joke"}}
-
-User: that's interesting, tell me more
-{{"chat": "Glad you think so! What would you like to know?"}}
-
-User: play some music
-{{"tool": "handle_play_music"}}
-
-User: I'm feeling bored
-{{"chat": "I can tell you a joke, play music, or share the news. What sounds good?"}}
-
-User: set volume to 50 percent
-{{"tool": "handle_system"}}
-
-User: take a screenshot
-{{"tool": "handle_system"}}
-
-User: lock my screen
-{{"tool": "handle_system"}}"""
-
-_history: list[str] = []
-
-database.init_db()
-prev_session = database.get_last_session_id()
-if prev_session:
-    prev_msgs = database.load_conversation(prev_session, limit=MAX_HISTORY * 2)
-    for msg in prev_msgs:
-        label = "User" if msg["role"] == "user" else "Hollali"
-        _history.append(f"{label}: {msg['content']}")
-    if _history:
-        logger.info(f"Loaded {len(_history)} messages from last session ({prev_session})")
+_history: list[dict] = []
+_history_lock = threading.Lock()
+_initialized = False
+_session: requests.Session | None = None
 
 
-def _build_prompt(user_input: str) -> str:
-    parts = [SYSTEM_PROMPT, ""]
-    for h in _history:
-        parts.append(h)
-    parts.append(f"User: {user_input}")
-    return "\n".join(parts)
+def _get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    return _session
+
+
+def _init():
+    global _initialized
+    if _initialized:
+        return
+    _initialized = True
+    database.init_db()
+    prev_session = database.get_last_session_id()
+    if prev_session:
+        prev_msgs = database.load_conversation(prev_session, limit=MAX_HISTORY * 2)
+        with _history_lock:
+            for msg in reversed(prev_msgs):
+                role = "user" if msg["role"] == "user" else "assistant"
+                _history.append({"role": role, "content": msg["content"]})
+            if _history:
+                logger.info(f"Loaded {len(_history)} messages from last session ({prev_session})")
 
 
 def _save(role: str, content: str) -> None:
-    database.save_conversation(SESSION_ID, role, content)
+    database.save_conversation(_get_session_id(), role, content)
 
 
 def query(user_input: str) -> tuple[Literal["tool", "chat"], str]:
-    global _history
+    _init()
+
+    messages = [{"role": "system", "content": _build_system_prompt()}]
+    with _history_lock:
+        messages.extend(_history)
+    messages.append({"role": "user", "content": user_input})
 
     try:
-        resp = requests.post(
+        resp = _get_session().post(
             LLM_API_URL,
             json={
                 "model": LLM_MODEL,
-                "prompt": _build_prompt(user_input),
+                "messages": messages,
                 "stream": False,
-                "options": {"num_ctx": 2048, "temperature": 0.1},
+                "options": {"num_ctx": 2048, "temperature": 0.2},
             },
             timeout=60,
         )
         resp.raise_for_status()
-        raw = resp.json().get("response", "").strip()
+        raw = resp.json().get("message", {}).get("content", "").strip()
     except Exception as e:
-        logger.error("LLM query failed", exc_info=True)
+        logger.error(f"LLM query failed: {e}")
         return "chat", ""
 
     _save("user", user_input)
@@ -152,20 +150,214 @@ def query(user_input: str) -> tuple[Literal["tool", "chat"], str]:
             return "chat", raw
 
     if "tool" in data and data["tool"] in TOOL_NAMES:
-        _history.append(f"User: {user_input}")
-        if len(_history) > MAX_HISTORY * 2:
-            _history = _history[-(MAX_HISTORY * 2):]
+        with _history_lock:
+            _history.append({"role": "user", "content": user_input})
+            if len(_history) > MAX_HISTORY * 2:
+                _history[:] = _history[-(MAX_HISTORY * 2):]
         _save("assistant", f"[tool: {data['tool']}]")
         return "tool", data["tool"]
 
     if "chat" in data:
         reply = str(data["chat"]).strip()
-        _history.append(f"User: {user_input}")
-        _history.append(f"Hollali: {reply}")
-        if len(_history) > MAX_HISTORY * 2:
-            _history = _history[-(MAX_HISTORY * 2):]
+        with _history_lock:
+            _history.append({"role": "user", "content": user_input})
+            _history.append({"role": "assistant", "content": reply})
+            if len(_history) > MAX_HISTORY * 2:
+                _history[:] = _history[-(MAX_HISTORY * 2):]
         _save("assistant", reply)
         return "chat", reply
 
     _save("assistant", raw.strip())
     return "chat", raw.strip()
+
+
+def query_stream(user_input: str):
+    """Yields ("chunk", text) for each token, then ("done", intent_type, payload)."""
+    _init()
+
+    messages = [{"role": "system", "content": _build_system_prompt()}]
+    with _history_lock:
+        messages.extend(_history)
+    messages.append({"role": "user", "content": user_input})
+
+    full_content = ""
+    try:
+        resp = _get_session().post(
+            LLM_API_URL,
+            json={
+                "model": LLM_MODEL,
+                "messages": messages,
+                "stream": True,
+                "options": {"num_ctx": 2048, "temperature": 0.2},
+            },
+            stream=True,
+            timeout=60,
+        )
+        resp.raise_for_status()
+
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "error" in data:
+                logger.error(f"Ollama error: {data['error']}")
+                yield ("chunk", f"[Error: {data['error']}]")
+                continue
+            if "message" in data and "content" in data["message"]:
+                chunk = data["message"]["content"]
+                if chunk:
+                    full_content += chunk
+                    yield ("chunk", chunk)
+            if data.get("done"):
+                break
+        if not full_content.strip():
+            logger.warning("LLM returned empty response")
+            yield ("done", "chat", "")
+            return
+    except Exception as e:
+        logger.error(f"LLM query failed: {e}")
+        yield ("chunk", "[LLM query failed — check Ollama is running]")
+        yield ("done", "chat", "I had trouble connecting. Is Ollama running?")
+        return
+
+    _save("user", user_input)
+    raw = full_content.strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r'\{[^{}]*\}', raw)
+        if match:
+            try:
+                data = json.loads(match.group())
+            except json.JSONDecodeError:
+                _save("assistant", raw)
+                yield ("done", "chat", raw)
+                return
+        else:
+            _save("assistant", raw)
+            yield ("done", "chat", raw)
+            return
+
+    if "tool" in data and data["tool"] in TOOL_NAMES:
+        with _history_lock:
+            _history.append({"role": "user", "content": user_input})
+            if len(_history) > MAX_HISTORY * 2:
+                _history[:] = _history[-(MAX_HISTORY * 2):]
+        _save("assistant", f"[tool: {data['tool']}]")
+        yield ("done", "tool", data["tool"])
+        return
+
+    if "chat" in data:
+        reply = str(data["chat"]).strip()
+        with _history_lock:
+            _history.append({"role": "user", "content": user_input})
+            _history.append({"role": "assistant", "content": reply})
+            if len(_history) > MAX_HISTORY * 2:
+                _history[:] = _history[-(MAX_HISTORY * 2):]
+        _save("assistant", reply)
+        yield ("done", "chat", reply)
+        return
+
+    _save("assistant", raw)
+    yield ("done", "chat", raw)
+
+
+def query_chat(user_input: str) -> str:
+    """Plain-text LLM chat, no JSON parsing. Returns the response string."""
+    _init()
+
+    messages = [{"role": "system", "content": _build_system_prompt()}]
+    with _history_lock:
+        messages.extend(_history)
+    messages.append({"role": "user", "content": user_input})
+
+    try:
+        resp = _get_session().post(
+            LLM_API_URL,
+            json={
+                "model": LLM_MODEL,
+                "messages": messages,
+                "stream": False,
+                "options": {"num_ctx": 2048, "temperature": 0.2},
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        reply = resp.json().get("message", {}).get("content", "").strip()
+    except Exception as e:
+        logger.error(f"LLM query failed: {e}")
+        return ""
+
+    _save("user", user_input)
+    if reply:
+        with _history_lock:
+            _history.append({"role": "user", "content": user_input})
+            _history.append({"role": "assistant", "content": reply})
+            if len(_history) > MAX_HISTORY * 2:
+                _history[:] = _history[-(MAX_HISTORY * 2):]
+        _save("assistant", reply)
+    return reply
+
+
+def query_chat_stream(user_input: str):
+    """Streaming plain-text LLM chat. Yields ("chunk", text) then ("done", text)."""
+    _init()
+
+    messages = [{"role": "system", "content": _build_system_prompt()}]
+    with _history_lock:
+        messages.extend(_history)
+    messages.append({"role": "user", "content": user_input})
+
+    full_content = ""
+    try:
+        resp = _get_session().post(
+            LLM_API_URL,
+            json={
+                "model": LLM_MODEL,
+                "messages": messages,
+                "stream": True,
+                "options": {"num_ctx": 2048, "temperature": 0.2},
+            },
+            stream=True,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "error" in data:
+                logger.error(f"Ollama error: {data['error']}")
+                continue
+            if "message" in data and "content" in data["message"]:
+                chunk = data["message"]["content"]
+                if chunk:
+                    full_content += chunk
+                    yield ("chunk", chunk)
+            if data.get("done"):
+                break
+        if not full_content.strip():
+            logger.warning("LLM returned empty response")
+            yield ("done", "")
+            return
+    except Exception as e:
+        logger.error(f"LLM query failed: {e}")
+        yield ("chunk", "[LLM error — is Ollama running?]")
+        yield ("done", "")
+        return
+
+    _save("user", user_input)
+    reply = full_content.strip()
+    with _history_lock:
+        _history.append({"role": "user", "content": user_input})
+        _history.append({"role": "assistant", "content": reply})
+        if len(_history) > MAX_HISTORY * 2:
+            _history[:] = _history[-(MAX_HISTORY * 2):]
+    _save("assistant", reply)
+    yield ("done", reply)

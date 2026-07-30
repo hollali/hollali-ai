@@ -101,7 +101,7 @@ def handle_system_command(text: str) -> str:
                 if 0 <= pct <= 100:
                     if set_brightness(pct):
                         return f" Brightness set to {pct} percent."
-                    return " Could not change brightness."
+                    return " Could not change brightness. Try running with video group membership or as root."
         return ""
 
     if "screenshot" in text_lower or "screen shot" in text_lower or "take a picture" in text_lower:

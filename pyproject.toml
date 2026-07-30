@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hollali"
+version = "1.0.0"
+description = "A modular, offline-capable voice assistant with CLI and desktop GUI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "SpeechRecognition>=3.10.0",
+    "pyttsx3>=2.90",
+    "pyjokes>=0.8.0",
+    "wikipedia>=1.4.0",
+    "wolframalpha>=5.0.0",
+    "twilio>=9.0.0",
+    "requests>=2.31.0",
+    "google-api-python-client>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth>=2.0.0",
+    "vosk>=0.3.45",
+    "sounddevice>=0.5.0",
+    "pydub>=0.25.1",
+    "numpy>=2.0.0",
+    "PySide6>=6.6.0",
+    "pyaudio>=0.2.14",
+]
+
+[project.scripts]
+hollali = "main:main"
+hollali-desktop = "desktop:main"
+
+[tool.setuptools]
+py-modules = [
+    "main", "desktop", "config", "speech", "commands", "llm",
+    "database", "log", "utils", "system_control", "plugin_loader",
+]
+
+[tool.setuptools.packages.find]
+include = ["plugins*"]

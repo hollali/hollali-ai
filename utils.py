@@ -60,11 +60,13 @@ def send_email(to: str, content: str) -> None:
     msg["To"] = to
 
     server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.ehlo()
-    server.starttls()
-    server.login(config.GMAIL_USER, config.GMAIL_APP_PASSWORD)
-    server.sendmail(config.GMAIL_USER, [to], msg.as_string())
-    server.close()
+    try:
+        server.ehlo()
+        server.starttls()
+        server.login(config.GMAIL_USER, config.GMAIL_APP_PASSWORD)
+        server.sendmail(config.GMAIL_USER, [to], msg.as_string())
+    finally:
+        server.close()
 
 
 def note(text: str) -> None:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import atexit
+import concurrent.futures
 import json
-import math
+import logging
 import queue
 import re
 import subprocess
@@ -9,6 +11,8 @@ import sys
 import threading
 import time
 from pathlib import Path
+
+import math
 
 import config
 from log import logger
@@ -44,56 +48,70 @@ def _init_pyttsx3():
 _PIPER_BIN = Path.home() / ".local" / "bin" / "piper"
 _PIPER_VOICE = Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx"
 
+_piper_available: bool | None = None
+_piper_lock = threading.Lock()
+
+
+def _check_piper() -> bool:
+    global _piper_available
+    if _piper_available is None:
+        _piper_available = _PIPER_BIN.exists() and _PIPER_VOICE.exists()
+    return _piper_available
+
 
 def _talk_piper(text: str) -> None:
-    if not _PIPER_BIN.exists():
-        logger.warning("Piper binary not found, falling back to espeak")
+    if not _check_piper():
+        logger.warning("Piper not available, falling back to espeak")
         _talk_espeak(text)
         return
-    if not _PIPER_VOICE.exists():
-        logger.warning("Piper voice model not found, falling back to espeak")
-        _talk_espeak(text)
-        return
-    try:
-        piper = subprocess.Popen(
-            [str(_PIPER_BIN), "--model", str(_PIPER_VOICE), "--output_raw"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        raw_out, piper_err = piper.communicate(input=text.encode(), timeout=30)
-        if piper.returncode != 0:
-            logger.warning(f"Piper failed (rc={piper.returncode}): {piper_err.decode().strip()}")
+    with _piper_lock:
+        try:
+            piper = subprocess.Popen(
+                [str(_PIPER_BIN), "--model", str(_PIPER_VOICE), "--output_raw"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            raw_out, piper_err = piper.communicate(input=text.encode(), timeout=30)
+            if piper.returncode != 0:
+                logger.warning(f"Piper failed (rc={piper.returncode}): {piper_err.decode().strip()}")
+                _talk_espeak(text)
+                return
+
+            wav_path = Path.home() / ".hollali" / "piper_output.wav"
+            wav_path.parent.mkdir(parents=True, exist_ok=True)
+
+            import struct
+            data_len = len(raw_out)
+            with open(wav_path, "wb") as wf:
+                wf.write(b"RIFF")
+                wf.write(struct.pack("<I", 36 + data_len))
+                wf.write(b"WAVE")
+                wf.write(b"fmt ")
+                wf.write(struct.pack("<I", 16))
+                wf.write(struct.pack("<H", 1))
+                wf.write(struct.pack("<H", 1))
+                wf.write(struct.pack("<I", 22050))
+                wf.write(struct.pack("<I", 44100))
+                wf.write(struct.pack("<H", 2))
+                wf.write(struct.pack("<H", 16))
+                wf.write(b"data")
+                wf.write(struct.pack("<I", data_len))
+                wf.write(raw_out)
+
+            for player in ("pw-play", "paplay"):
+                try:
+                    subprocess.run(
+                        [player, str(wav_path)],
+                        capture_output=True, timeout=60, check=True,
+                    )
+                    break
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    continue
+            else:
+                raise RuntimeError("No audio player found (pw-play, paplay)")
+            wav_path.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Piper playback error: {e}", exc_info=True)
             _talk_espeak(text)
-            return
-
-        wav_path = Path.home() / ".hollali" / "piper_output.wav"
-        wav_path.parent.mkdir(parents=True, exist_ok=True)
-
-        import struct
-        data_len = len(raw_out)
-        with open(wav_path, "wb") as wf:
-            wf.write(b"RIFF")
-            wf.write(struct.pack("<I", 36 + data_len))
-            wf.write(b"WAVE")
-            wf.write(b"fmt ")
-            wf.write(struct.pack("<I", 16))
-            wf.write(struct.pack("<H", 1))
-            wf.write(struct.pack("<H", 1))
-            wf.write(struct.pack("<I", 22050))
-            wf.write(struct.pack("<I", 44100))
-            wf.write(struct.pack("<H", 2))
-            wf.write(struct.pack("<H", 16))
-            wf.write(b"data")
-            wf.write(struct.pack("<I", data_len))
-            wf.write(raw_out)
-
-        subprocess.run(
-            ["paplay", str(wav_path)],
-            capture_output=True, timeout=60,
-        )
-        wav_path.unlink(missing_ok=True)
-    except Exception as e:
-        logger.warning(f"Piper playback error: {e}", exc_info=True)
-        _talk_espeak(text)
 
 
 def _talk_espeak(text: str) -> None:
@@ -119,6 +137,18 @@ def talk(text: str) -> None:
     else:
         _tts_engine.say(text)
         _tts_engine.runAndWait()
+
+
+_talk_pool: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def talk_async(text: str) -> None:
+    """Run talk() in a background thread so it doesn't block the caller."""
+    global _talk_pool
+    if _talk_pool is None:
+        _talk_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        atexit.register(_talk_pool.shutdown, wait=False)
+    _talk_pool.submit(talk, text)
 
 
 # ---------------------------------------------------------------------------

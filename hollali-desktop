@@ -1,2 +1,12 @@
-#!/usr/bin/env bash
-exec /home/hollali/.local/bin/python3.11 /home/hollali/Projects/hollali-ai/desktop.py "$@"
+#!/usr/bin/env python3
+"""Launch the Hollali desktop GUI."""
+import sys
+from pathlib import Path
+
+# Make sure the project root is on sys.path
+_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(_root))
+
+if __name__ == "__main__":
+    from desktop import main
+    main()

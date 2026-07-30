@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -28,12 +29,15 @@ TWILIO_AUTH_TOKEN = _getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM_NUMBER = _getenv("TWILIO_FROM_NUMBER")
 TWILIO_TO_NUMBER = _getenv("TWILIO_TO_NUMBER")
 
-GOOGLE_CALENDAR_CREDENTIALS_PATH = _getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "credentials.json")
-CHROME_DRIVER_PATH = _getenv("CHROME_DRIVER_PATH")
+_raw_calendar_creds = _getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "")
+GOOGLE_CALENDAR_CREDENTIALS_PATH = (
+    _raw_calendar_creds if _raw_calendar_creds and Path(_raw_calendar_creds).is_absolute()
+    else str(Path.home() / ".hollali" / (_raw_calendar_creds or "credentials.json"))
+)
 
 LLM_ENABLED = _getenv("LLM_ENABLED", "true").lower() == "true"
 LLM_MODEL = _getenv("LLM_MODEL", "qwen:latest")
-LLM_API_URL = _getenv("LLM_API_URL", "http://localhost:11434/api/generate")
+LLM_API_URL = _getenv("LLM_API_URL", "http://localhost:11434/api/chat")
 
 CONVERSATION_TIMEOUT = int(_getenv("CONVERSATION_TIMEOUT", "8"))
 
@@ -45,17 +49,21 @@ TUI_MODE = False
 
 
 def load_persisted_settings() -> None:
-    from database import get_preference  # noqa: late import to avoid circular
-    global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT
-    stt = get_preference("stt_engine")
-    tts = get_preference("tts_engine")
-    timeout = get_preference("conversation_timeout")
-    if stt:
-        STT_ENGINE = stt
-    if tts:
-        TTS_ENGINE = tts
-    if timeout:
-        try:
-            CONVERSATION_TIMEOUT = int(timeout)
-        except ValueError:
-            pass
+    try:
+        from database import get_preference  # noqa: late import to avoid circular
+        global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT
+        stt = get_preference("stt_engine")
+        tts = get_preference("tts_engine")
+        timeout = get_preference("conversation_timeout")
+        if stt:
+            STT_ENGINE = stt
+        if tts:
+            TTS_ENGINE = tts
+        if timeout:
+            try:
+                CONVERSATION_TIMEOUT = int(timeout)
+            except ValueError:
+                pass
+    except Exception as e:
+        import logging
+        logging.getLogger("hollali").warning(f"Failed to load persisted settings: {e}")

@@ -95,6 +95,16 @@ def list_notes(limit: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def list_sessions(limit: int = 30) -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT session_id, MAX(created_at) as last "
+            "FROM conversations GROUP BY session_id ORDER BY last DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"session_id": r["session_id"], "last": r["last"]} for r in rows]
+
+
 def get_preference(key: str, default: str = "") -> str:
     with _get_conn() as conn:
         row = conn.execute(

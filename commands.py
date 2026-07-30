@@ -21,11 +21,21 @@ import requests
 import system_control
 import utils
 import wikipedia
-from speech import talk, rec_audio
+from speech import talk, talk_async, rec_audio
 
 
 def handle_hello(text: str) -> str:
     return utils.say_hello(text)
+
+
+def handle_speak(text: str) -> str:
+    words = text.lower().split()
+    if words and words[0] in ("say", "speak", "talk") and len(words) > 1:
+        phrase = text[len(words[0]):].strip()
+        if phrase:
+            talk_async(phrase)
+            return "\u2713"  # stop handler chain, no visible text
+    return ""
 
 
 def handle_date(text: str) -> str:
@@ -48,9 +58,17 @@ def handle_time(text: str) -> str:
 
 def handle_wikipedia(text: str) -> str:
     person = utils.wiki_person(text)
+    if not person:
+        words = text.lower().split()
+        if "wikipedia" in words:
+            # Try the words after "wikipedia" as search term
+            ind = words.index("wikipedia")
+            after = text.split()[ind + 1:]
+            if after:
+                person = " ".join(after)
     if person:
         try:
-            wiki = wikipedia.summary(person, sentences=2)
+            wiki = wikipedia.summary(person, sentences=2, auto_suggest=False)
             return " " + wiki
         except wikipedia.exceptions.DisambiguationError as e:
             return f" There are multiple results for {person}. Please be more specific."
@@ -60,35 +78,40 @@ def handle_wikipedia(text: str) -> str:
 
 
 def handle_where_is(text: str) -> str:
+    import urllib.parse
     words = text.lower().split()
     if "where" not in words or "is" not in words:
         return ""
     ind = words.index("is")
-    location = text.split()[ind + 1:]
-    url = "https://www.google.com/maps/place/" + "".join(location)
+    location = " ".join(text.split()[ind + 1:])
+    url = "https://www.google.com/maps/place/" + urllib.parse.quote(location)
     webbrowser.open(url)
-    return f" This is where {''.join(location)} is."
+    return f" This is where {location} is."
 
 
 def handle_weather(text: str) -> str:
+    import urllib.parse
     if "weather" not in text.lower():
         return ""
 
     if not config.WEATHER_API_KEY:
         return " Weather API key not configured. Please set WEATHER_API_KEY in .env"
 
-    if "in" not in text.lower().split():
-        return ""
-    ind = text.lower().split().index("in")
-    location = "".join(text.split()[ind + 1:])
-    url = f"http://api.openweathermap.org/data/2.5/weather?appid={config.WEATHER_API_KEY}&q={location}"
+    words = text.lower().split()
+    if "in" in words:
+        ind = words.index("in")
+        location = urllib.parse.quote(" ".join(text.split()[ind + 1:]))
+    else:
+        # Try last word as city name
+        location = urllib.parse.quote(words[-1])
+    url = f"https://api.openweathermap.org/data/2.5/weather?appid={config.WEATHER_API_KEY}&q={location}"
 
     try:
         js = requests.get(url).json()
     except requests.RequestException:
         return " Could not fetch weather data. Please check your connection."
 
-    if js.get("cod") == "404":
+    if isinstance(js.get("cod"), str) and js["cod"] == "404":
         return " City Not Found"
 
     weather = js["main"]
@@ -127,7 +150,7 @@ def handle_sleep(text: str) -> str:
     if "don't listen" in text or "stop listening" in text or "do not listen" in text:
         talk("for how many seconds do you want me to sleep")
         try:
-            a = int(rec_audio())
+            a = int(rec_audio(timeout=10))
         except (ValueError, TypeError):
             return " I didn't understand the number."
         time.sleep(a)
@@ -236,7 +259,7 @@ def handle_email(text: str) -> str:
 
     try:
         talk("What should I say?")
-        content = rec_audio()
+        content = rec_audio(timeout=15)
         if not content:
             return " I didn't catch that."
 
@@ -244,7 +267,9 @@ def handle_email(text: str) -> str:
             to = config.GMAIL_USER
         else:
             talk("Whom should I send it to?")
-            to = input("Enter To Address: ").strip()
+            to = rec_audio(timeout=15)
+            if not to:
+                return " I didn't catch the recipient."
 
         utils.send_email(to, content)
         return " Email has been sent!"
@@ -257,7 +282,7 @@ def handle_make_note(text: str) -> str:
     if "make a note" not in text:
         return ""
     talk("What would you like me to write down?")
-    note_text = rec_audio()
+    note_text = rec_audio(timeout=15)
     if note_text:
         utils.note(note_text)
         database.save_note(title="", content=note_text)
@@ -272,7 +297,7 @@ def handle_news(text: str) -> str:
     if not config.NEWS_API_KEY:
         return " News API key not configured. Please set NEWS_API_KEY in .env"
 
-    url = f"http://newsapi.org/v2/top-headlines?country=in&apiKey={config.NEWS_API_KEY}"
+    url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={config.NEWS_API_KEY}"
 
     try:
         response = requests.get(url)
@@ -286,12 +311,12 @@ def handle_news(text: str) -> str:
         title = article.get("title", "")
         description = article.get("description", "")
         if title:
-            talk(str(title))
+            talk_async(str(title))
         if description:
-            talk(str(description))
+            talk_async(str(description))
         time.sleep(2)
 
-    return ""
+    return " News headlines delivered."
 
 
 def handle_send_message(text: str) -> str:
@@ -305,7 +330,7 @@ def handle_send_message(text: str) -> str:
 
     client = Client(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
     talk("What should I send?")
-    body = rec_audio()
+    body = rec_audio(timeout=15)
     if not body:
         return " I didn't catch that."
 
@@ -382,7 +407,7 @@ def _get_calendar_service():
     SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
     creds = None
 
-    token_path = Path("token.pickle")
+    token_path = Path.home() / ".hollali" / "token.pickle"
     if token_path.exists():
         with open(token_path, "rb") as token:
             creds = pickle.load(token)
@@ -455,6 +480,7 @@ _load_plugins()
 
 COMMAND_HANDLERS: dict[str, dict] = {
     "handle_exit": {"fn": handle_exit, "early": True},
+    "handle_speak": {"fn": handle_speak, "early": False},
     "handle_hello": {"fn": lambda t: handle_hello(t) or handle_about(t), "early": False},
     "handle_date": {"fn": handle_date, "early": False},
     "handle_time": {"fn": handle_time, "early": False},
@@ -502,30 +528,41 @@ def _run_handlers(text: str, handler_names: list[str]) -> list[str]:
 
 
 def process_command(text: str) -> str:
-    responses = _run_handlers(text, ["handle_exit"])
+    _run_handlers(text, ["handle_exit"])
 
-    # Keyword-matched handlers run before LLM (system control, plugins)
     kw_result = _run_handlers(text, ["handle_system", "handle_plugins"])
     if kw_result:
         return " ".join(kw_result).strip()
 
+    all_handler_names = [k for k in COMMAND_HANDLERS if k not in ("handle_exit", "handle_system", "handle_plugins")]
+    kw_result = _run_handlers(text, all_handler_names)
+    if kw_result:
+        return " ".join(kw_result).strip()
+
     if config.LLM_ENABLED:
-        intent, payload = llm.query(text)
+        return llm.query_chat(text) or "I didn't understand that."
 
-        if intent == "tool" and payload in COMMAND_HANDLERS:
-            if payload not in ("handle_exit", "handle_system", "handle_plugins"):
-                responses.extend(_run_handlers(text, [payload]))
-            return " ".join(responses).strip()
-        if intent == "chat" and payload:
-            return payload
+    return "I didn't understand that."
 
-    # Fallback: all keyword handlers
-    all_handlers = [k for k in COMMAND_HANDLERS if k not in ("handle_exit", "handle_system", "handle_plugins")]
-    responses = _run_handlers(text, all_handlers)
 
-    result = " ".join(responses).strip()
-    if not result and config.LLM_ENABLED:
-        _, payload = llm.query(text)
-        return payload
+def process_command_stream(text: str):
+    """Generator yielding ("chunk", partial_text) or ("done", final_text)."""
+    _run_handlers(text, ["handle_exit"])
 
-    return result
+    kw_result = _run_handlers(text, ["handle_system", "handle_plugins"])
+    if kw_result:
+        yield ("done", " ".join(kw_result).strip())
+        return
+
+    all_handler_names = [k for k in COMMAND_HANDLERS if k not in ("handle_exit", "handle_system", "handle_plugins")]
+    kw_result = _run_handlers(text, all_handler_names)
+    if kw_result:
+        yield ("done", " ".join(kw_result).strip())
+        return
+
+    if config.LLM_ENABLED:
+        for event in llm.query_chat_stream(text):
+            yield event
+        return
+
+    yield ("done", "I didn't understand that.")
