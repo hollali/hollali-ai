@@ -308,7 +308,9 @@ class ChatBubble(QtWidgets.QFrame):
         layout.addLayout(self._btn_row)
 
         # Hide buttons by default; show on hover
-        self._btn_row.setVisible(False)
+        self._copy_btn.hide()
+        if not is_user:
+            self._speak_btn.hide()
 
         if is_user:
             self.setObjectName("chatBubble")
@@ -322,11 +324,15 @@ class ChatBubble(QtWidgets.QFrame):
             self.setStyleSheet("background: transparent; border: none;")
 
     def enterEvent(self, event):
-        self._btn_row.setVisible(True)
+        self._copy_btn.show()
+        if not self._is_user:
+            self._speak_btn.show()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._btn_row.setVisible(False)
+        self._copy_btn.hide()
+        if not self._is_user:
+            self._speak_btn.hide()
         super().leaveEvent(event)
 
     def set_bubble_width(self, container_width: int):
