@@ -336,8 +336,10 @@ class ChatBubble(QtWidgets.QFrame):
         super().leaveEvent(event)
 
     def set_bubble_width(self, container_width: int):
-        ratio = 0.60 if self._is_user else 0.85
-        mw = max(280, int(container_width * ratio))
+        if self._is_user:
+            mw = max(280, int(container_width * 0.60))
+        else:
+            mw = max(280, int(container_width * 0.95))
         self.setMaximumWidth(mw)
 
     def _style_tool_buttons(self, btn, palette=None):
