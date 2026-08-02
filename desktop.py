@@ -9,7 +9,6 @@ from PySide6 import QtWidgets
 import config
 import database
 from log import logger
-
 from ui.main_window import MainWindow
 from ui.overlay import OverlayWidget
 from ui.threads import EngineThread

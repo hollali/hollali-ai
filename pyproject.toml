@@ -24,9 +24,15 @@ dependencies = [
     "vosk>=0.3.45,<0.4",
     "sounddevice>=0.5.0,<1.0",
     "pydub>=0.25.1,<1.0",
-    "numpy>=1.26.0,<2.0",
+    "numpy>=1.26.0,<3.0",
     "PySide6>=6.6.0,<7.0",
     "pyaudio>=0.2.14,<0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9.0",
+    "ruff>=0.6.0,<1.0",
 ]
 
 [project.scripts]
@@ -36,12 +42,24 @@ hollali-desktop = "desktop:main"
 [tool.setuptools]
 py-modules = [
     "main", "desktop", "config", "speech", "commands", "llm",
-    "database", "log", "utils", "system_control", "plugin_loader", "constants",
+    "database", "log", "utils", "system_control", "plugin_loader", "constants", "wake",
 ]
 
 [tool.setuptools.packages.find]
-include = ["plugins*"]
+include = ["plugins*", "handlers*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 119
+target-version = "py311"
+extend-exclude = ["__pycache__"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+line-ending = "auto"

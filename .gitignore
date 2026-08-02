@@ -7,3 +7,6 @@ __pycache__/
 *.mp3
 .vscode/
 *.db
+*.egg-info/
+build/
+dist/

@@ -82,9 +82,7 @@ def load_conversation(session_id: str, limit: int = 10) -> list[dict[str, str]]:
 
 def get_last_session_id() -> str | None:
     with _get_conn() as conn:
-        row = conn.execute(
-            "SELECT session_id FROM conversations ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT session_id FROM conversations ORDER BY created_at DESC LIMIT 1").fetchone()
     return row["session_id"] if row else None
 
 
@@ -100,9 +98,7 @@ def clear_all_conversations() -> None:
 
 def save_note(title: str, content: str) -> int:
     with _get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO notes (title, content) VALUES (?, ?)", (title, content)
-        )
+        cur = conn.execute("INSERT INTO notes (title, content) VALUES (?, ?)", (title, content))
         return cur.lastrowid
 
 
@@ -127,9 +123,7 @@ def list_sessions(limit: int = 30) -> list[dict[str, Any]]:
 
 def get_preference(key: str, default: str = "") -> str:
     with _get_conn() as conn:
-        row = conn.execute(
-            "SELECT value FROM preferences WHERE key = ?", (key,)
-        ).fetchone()
+        row = conn.execute("SELECT value FROM preferences WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default
 
 

@@ -10,6 +10,8 @@ import config
 from commands import process_command, process_command_stream
 from constants import END_CONVERSATION
 from speech import call, is_speaking, rec_audio, talk, talk_async
+from wake import listen_for_wake, wake_listener_active
+
 AUTOSTART_PATH = os.path.expanduser("~/.config/autostart/hollali-autostart.desktop")
 
 
@@ -68,11 +70,15 @@ class EngineThread(QtCore.QThread):
                     text = rec_audio(
                         timeout=config.CONVERSATION_TIMEOUT,
                         partial_cb=lambda t: self.partial_text.emit(t),
-                        level_cb=lambda l: self.audio_level.emit(l),
+                        level_cb=lambda level: self.audio_level.emit(level),
+                    )
+                elif wake_listener_active():
+                    text = listen_for_wake(
+                        level_cb=lambda level: self.audio_level.emit(level),
                     )
                 else:
                     text = rec_audio(
-                        level_cb=lambda l: self.audio_level.emit(l),
+                        level_cb=lambda level: self.audio_level.emit(level),
                     )
             except Exception as e:
                 self.error_occurred.emit(str(e))

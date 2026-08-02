@@ -68,9 +68,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _apply_dialog_theme(self):
         palette = _theme_palette()
-        self.setStyleSheet(
-            f"QDialog {{ background: {palette['bg']}; }}"
-        )
+        self.setStyleSheet(f"QDialog {{ background: {palette['bg']}; }}")
 
     def _save(self):
         config.STT_ENGINE = self.stt_combo.currentText()

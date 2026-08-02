@@ -50,7 +50,8 @@ class WaveformWidget(QtWidgets.QWidget):
                 int(self.height() - h),
                 int(bar_w),
                 int(h),
-                2, 2,
+                2,
+                2,
             )
         p.end()
 
@@ -74,18 +75,14 @@ class ChatBubble(QtWidgets.QFrame):
         self.text_label = QtWidgets.QLabel(text)
         self.text_label.setWordWrap(True)
         self.text_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self.text_label.setStyleSheet(
-            f"font-size: 14px; color: {palette['text']}; background: transparent;"
-        )
+        self.text_label.setStyleSheet(f"font-size: 14px; color: {palette['text']}; background: transparent;")
         layout.addWidget(self.text_label)
 
         self._copy_btn = QtWidgets.QPushButton("Copy")
         self._copy_btn.setFixedSize(42, 20)
         self._copy_btn.setToolTip("Copy text")
         self._copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._copy_btn.clicked.connect(
-            lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text())
-        )
+        self._copy_btn.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text()))
         self._copy_btn.hide()
         self._style_copy_btn()
         layout.addWidget(self._copy_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
@@ -102,13 +99,9 @@ class ChatBubble(QtWidgets.QFrame):
     def _apply_bubble_style(self):
         p = self._palette
         if self._is_user:
-            self.setStyleSheet(
-                f"background: {p['surface']}; border-radius: 12px;"
-            )
+            self.setStyleSheet(f"background: {p['surface']}; border-radius: 12px;")
         else:
-            self.setStyleSheet(
-                f"background: transparent; border-left: 2px solid {p['accent']};"
-            )
+            self.setStyleSheet(f"background: transparent; border-left: 2px solid {p['accent']};")
 
     def enterEvent(self, event):
         self._copy_btn.show()
@@ -127,9 +120,7 @@ class ChatBubble(QtWidgets.QFrame):
         self._palette = palette
         self._apply_bubble_style()
         self._style_copy_btn()
-        self.text_label.setStyleSheet(
-            f"font-size: 14px; color: {palette['text']}; background: transparent;"
-        )
+        self.text_label.setStyleSheet(f"font-size: 14px; color: {palette['text']}; background: transparent;")
         self._sender_label.setStyleSheet(
             f"font-size: 11px; color: {palette['text_sec']}; background: transparent; font-weight: 600;"
         )
@@ -147,9 +138,7 @@ class ChatBubble(QtWidgets.QFrame):
     def contextMenuEvent(self, event):
         menu = QtWidgets.QMenu(self)
         copy_action = menu.addAction("Copy")
-        copy_action.triggered.connect(
-            lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text())
-        )
+        copy_action.triggered.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_label.text()))
         menu.exec(event.globalPos())
 
 
@@ -226,7 +215,7 @@ class ChatView(QtWidgets.QScrollArea):
             item = self._layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
-        if hasattr(self, 'welcome'):
+        if hasattr(self, "welcome"):
             self.welcome.show()
         self._scroll_to_bottom()
 
@@ -288,9 +277,7 @@ class WelcomeWidget(QtWidgets.QWidget):
         self.title.setStyleSheet(
             f"font-size: 28px; font-weight: bold; color: {palette['accent']}; background: transparent;"
         )
-        self.subtitle.setStyleSheet(
-            f"font-size: 14px; color: {palette['text_sec']}; background: transparent;"
-        )
+        self.subtitle.setStyleSheet(f"font-size: 14px; color: {palette['text_sec']}; background: transparent;")
         bg = palette["surface"]
         text = palette["text"]
         border = palette["border"]
@@ -315,7 +302,7 @@ class ThinkingIndicator(QtWidgets.QWidget):
 
         self._dots = []
         for _ in range(3):
-            dot = QtWidgets.QLabel("\u25CF")
+            dot = QtWidgets.QLabel("\u25cf")
             self._dots.append(dot)
             layout.addWidget(dot)
 
@@ -332,9 +319,7 @@ class ThinkingIndicator(QtWidgets.QWidget):
             f"color: {palette['text_sec']}; font-size: 13px; font-style: italic; background: transparent;"
         )
         for dot in self._dots:
-            dot.setStyleSheet(
-                f"color: {palette['text_sec']}; font-size: 8px; background: transparent;"
-            )
+            dot.setStyleSheet(f"color: {palette['text_sec']}; font-size: 8px; background: transparent;")
 
     def start(self):
         self._dot_index = 0
@@ -345,20 +330,14 @@ class ThinkingIndicator(QtWidgets.QWidget):
         self._timer.stop()
         self.hide()
         for dot in self._dots:
-            dot.setStyleSheet(
-                f"color: {self._palette['text_sec']}; font-size: 8px; background: transparent;"
-            )
+            dot.setStyleSheet(f"color: {self._palette['text_sec']}; font-size: 8px; background: transparent;")
 
     def _animate(self):
         for i, dot in enumerate(self._dots):
             if i == self._dot_index:
-                dot.setStyleSheet(
-                    f"color: {self._palette['accent']}; font-size: 11px; background: transparent;"
-                )
+                dot.setStyleSheet(f"color: {self._palette['accent']}; font-size: 11px; background: transparent;")
             else:
-                dot.setStyleSheet(
-                    f"color: {self._palette['text_sec']}; font-size: 8px; background: transparent;"
-                )
+                dot.setStyleSheet(f"color: {self._palette['text_sec']}; font-size: 8px; background: transparent;")
         self._dot_index = (self._dot_index + 1) % 3
 
 
@@ -473,6 +452,7 @@ class MicButton(QtWidgets.QPushButton):
 
     def _colors(self) -> tuple:
         from ui.theming import _theme_palette
+
         c = _theme_palette()
         if self._active:
             return QtGui.QColor("#22c55e"), QtGui.QColor("white")
@@ -494,7 +474,6 @@ class MicButton(QtWidgets.QPushButton):
         cx = rect.center().x()
         body_top = rect.top() + 3
         body_bot = rect.bottom() - 8
-        body_mid = (body_top + body_bot) / 2
         body_w = rect.width() * 0.35
         body_h = body_bot - body_top
 
@@ -519,6 +498,3 @@ class MicButton(QtWidgets.QPushButton):
         p.drawLine(int(cx - base_w / 2), int(stand_bot), int(cx + base_w / 2), int(stand_bot))
 
         p.end()
-
-
-

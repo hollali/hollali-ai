@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import datetime
 import os
 import random
@@ -9,10 +10,7 @@ import sys
 from email.mime.text import MIMEText
 from pathlib import Path
 
-import calendar
 import config
-import pyjokes
-import requests
 from speech import talk
 
 
@@ -93,8 +91,7 @@ def _change_bg_linux(image_path: str) -> bool:
     try:
         uri = Path(image_path).resolve().as_uri()
         result = subprocess.run(
-            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri],
-            capture_output=True, text=True
+            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri], capture_output=True, text=True
         )
         return result.returncode == 0
     except Exception:
@@ -116,6 +113,7 @@ def change_background(text: str) -> None:
 
     if sys.platform == "win32":
         import ctypes
+
         ctypes.windll.user32.SystemParametersInfoW(20, 0, str(choice), 0)
         talk("Background changed successfully")
     elif sys.platform == "linux":

@@ -30,8 +30,7 @@ def _make_icon_pixmap(size: int, active: bool = False) -> QtGui.QPixmap:
 
 
 class SystemTray(QtWidgets.QSystemTrayIcon):
-    def __init__(self, app: QtWidgets.QApplication, window: MainWindow,
-                 overlay: OverlayWidget, engine: EngineThread):
+    def __init__(self, app: QtWidgets.QApplication, window: MainWindow, overlay: OverlayWidget, engine: EngineThread):
         pixmap = _make_icon_pixmap(48)
         super().__init__(QtGui.QIcon(pixmap), app)
         self.window = window
@@ -72,8 +71,7 @@ class SystemTray(QtWidgets.QSystemTrayIcon):
         self.listen_action.setText("Stop Listening" if active else "Start Listening")
         self._update_icon(active)
         if active:
-            self.showMessage("Hollali", "Listening...",
-                             QtWidgets.QSystemTrayIcon.MessageIcon.Information, 2000)
+            self.showMessage("Hollali", "Listening...", QtWidgets.QSystemTrayIcon.MessageIcon.Information, 2000)
 
     def _update_icon(self, active: bool):
         pixmap = _make_icon_pixmap(48, active)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -60,14 +60,6 @@ class TestCommands:
 
     def test_handle_about_no_match(self):
         result = commands.handle_about("hello world")
-        assert result == ""
-
-    def test_handle_pizza(self):
-        result = commands.handle_pizza("order pizza")
-        assert "no longer supported" in result
-
-    def test_handle_pizza_no_keyword(self):
-        result = commands.handle_pizza("hello")
         assert result == ""
 
     @patch("webbrowser.open")

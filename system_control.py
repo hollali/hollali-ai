@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
-
-from speech import talk
 
 
 def set_volume(percent: int) -> bool:
@@ -12,7 +9,9 @@ def set_volume(percent: int) -> bool:
     try:
         subprocess.run(
             ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{percent}%"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return True
     except Exception:
@@ -23,7 +22,8 @@ def get_volume() -> int:
     try:
         result = subprocess.run(
             ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         for part in result.stdout.split():
             if part.endswith("%"):
@@ -55,7 +55,9 @@ def screenshot() -> Path | None:
     try:
         subprocess.run(
             ["import", "-window", "root", str(output)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return output
     except Exception:

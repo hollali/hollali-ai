@@ -3,17 +3,14 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import json
-import logging
+import math
 import queue
-import re
 import subprocess
-import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
-import math
+from typing import Any
 
 import config
 from log import logger
@@ -28,6 +25,7 @@ _tts_engine = None
 def _init_pyttsx3() -> None:
     global _tts_engine
     import pyttsx3
+
     _tts_engine = pyttsx3.init()
     voices = _tts_engine.getProperty("voices")
     preferred = ["gmw/en-us", "gmw/en-gb-x-rp"]
@@ -69,7 +67,9 @@ def _talk_piper(text: str) -> None:
         try:
             piper = subprocess.Popen(
                 [str(_PIPER_BIN), "--model", str(_PIPER_VOICE), "--output_raw"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
             raw_out, piper_err = piper.communicate(input=text.encode(), timeout=30)
             if piper.returncode != 0:
@@ -81,6 +81,7 @@ def _talk_piper(text: str) -> None:
             wav_path.parent.mkdir(parents=True, exist_ok=True)
 
             import struct
+
             data_len = len(raw_out)
             with open(wav_path, "wb") as wf:
                 wf.write(b"RIFF")
@@ -102,7 +103,9 @@ def _talk_piper(text: str) -> None:
                 try:
                     subprocess.run(
                         [player, str(wav_path)],
-                        capture_output=True, timeout=60, check=True,
+                        capture_output=True,
+                        timeout=60,
+                        check=True,
                     )
                     break
                 except (FileNotFoundError, subprocess.CalledProcessError):
@@ -118,7 +121,8 @@ def _talk_piper(text: str) -> None:
 def _talk_espeak(text: str) -> None:
     result = subprocess.run(
         ["espeak-ng", text, "-v", "en-us", "-s", "120", "-p", "50", "-a", "200"],
-        capture_output=True, timeout=30,
+        capture_output=True,
+        timeout=30,
     )
     if result.returncode != 0:
         stderr = result.stderr.decode().strip()
@@ -182,6 +186,7 @@ def _init_vosk() -> None:
         if _vosk_model is not None:
             return
         import vosk
+
         vosk.SetLogLevel(-1)
         model_path = config.VOSK_MODEL_PATH
         if model_path and Path(model_path).exists():
@@ -192,6 +197,7 @@ def _init_vosk() -> None:
                 logger.info("Downloading Vosk small model (~40MB)...")
                 import urllib.request
                 import zipfile
+
                 model_path.parent.mkdir(parents=True, exist_ok=True)
                 url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
                 zip_path = model_path.parent / "model.zip"
@@ -216,14 +222,22 @@ def _rms(data: bytes) -> float:
     return math.sqrt(total / samples)
 
 
-def rec_audio(timeout: float | None = None, phrase_limit: float | None = None,
-              partial_cb: Callable[[str], None] | None = None, level_cb: Callable[[float], None] | None = None) -> str:
+def rec_audio(
+    timeout: float | None = None,
+    phrase_limit: float | None = None,
+    partial_cb: Callable[[str], None] | None = None,
+    level_cb: Callable[[float], None] | None = None,
+) -> str:
     if config.STT_ENGINE == "vosk":
         return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
-    return _rec_google(timeout, phrase_limit)
+    return _rec_google(timeout, phrase_limit, partial_cb=partial_cb, level_cb=level_cb)
 
 
-def _rec_vosk(timeout: float | None = None, partial_cb: Callable[[str], None] | None = None, level_cb: Callable[[float], None] | None = None) -> str:
+def _rec_vosk(
+    timeout: float | None = None,
+    partial_cb: Callable[[str], None] | None = None,
+    level_cb: Callable[[float], None] | None = None,
+) -> str:
     global _vosk_model
     if _vosk_model is None:
         _init_vosk()
@@ -247,8 +261,11 @@ def _rec_vosk(timeout: float | None = None, partial_cb: Callable[[str], None] | 
 
     logger.debug("Listening (Vosk)...")
     with sd.RawInputStream(
-        samplerate=16000, blocksize=8000, dtype="int16",
-        channels=1, callback=callback,
+        samplerate=16000,
+        blocksize=8000,
+        dtype="int16",
+        channels=1,
+        callback=callback,
     ):
         rec = vosk.KaldiRecognizer(_vosk_model, 16000)
         last_activity = time.time()
@@ -284,13 +301,33 @@ def _rec_vosk(timeout: float | None = None, partial_cb: Callable[[str], None] | 
                 return ""
 
 
-def _rec_google(timeout: float | None = None, phrase_limit: float | None = None) -> str:
+def _rec_google(
+    timeout: float | None = None,
+    phrase_limit: float | None = None,
+    partial_cb: Callable[[str], None] | None = None,
+    level_cb: Callable[[float], None] | None = None,
+) -> str:
+    """Google STT via speech_recognition.
+
+    Note: Google's free web API does not expose partial (streaming) transcripts,
+    so ``partial_cb`` is only honored by the Vosk engine. ``level_cb`` is
+    approximated with a parallel energy monitor so the waveform still works.
+    """
+    if partial_cb:
+        _warn_google_no_partials()
+
+    monitor_stop: threading.Event | None = None
+    if level_cb:
+        monitor_stop, monitor = _start_level_monitor(level_cb)
+
     try:
         import speech_recognition as sr
     except ImportError:
         logger.warning("speech_recognition not installed, falling back to Vosk")
         config.STT_ENGINE = "vosk"
-        return _rec_vosk(timeout)
+        if monitor_stop:
+            monitor_stop.set()
+        return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
 
     recog = sr.Recognizer()
     recog.energy_threshold = 4000
@@ -317,8 +354,10 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
         if config.STT_ENGINE != "vosk":
             logger.warning(f"Microphone not available ({e}), falling back to Vosk")
             config.STT_ENGINE = "vosk"
-        return _rec_vosk(timeout)
+        return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
     finally:
+        if monitor_stop:
+            monitor_stop.set()
         _devnull.close()
 
     try:
@@ -332,5 +371,47 @@ def _rec_google(timeout: float | None = None, phrase_limit: float | None = None)
         return ""
 
 
+_google_no_partials_warned = False
+
+
+def _warn_google_no_partials() -> None:
+    global _google_no_partials_warned
+    if not _google_no_partials_warned:
+        _google_no_partials_warned = True
+        logger.warning(
+            "Google STT does not support live partial transcripts; switch STT_ENGINE=vosk for the streaming preview."
+        )
+
+
+def _start_level_monitor(level_cb: Callable[[float], None]) -> tuple[threading.Event, threading.Thread | None]:
+    """Run a background mic-energy monitor for the waveform widget.
+
+    Opens a separate input stream (Vosk-style), so if the device is busy it
+    degrades gracefully to no level updates instead of breaking STT.
+    """
+    stop = threading.Event()
+
+    def _monitor() -> None:
+        try:
+            import sounddevice as sd
+
+            with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype="int16", channels=1) as stream:
+                while not stop.is_set():
+                    try:
+                        data, _ = stream.read(8000)
+                    except Exception:
+                        break
+                    if level_cb:
+                        level_cb(min(1.0, _rms(bytes(data)) / 8000.0))
+        except Exception:
+            logger.debug("Level monitor unavailable for Google STT", exc_info=True)
+
+    t = threading.Thread(target=_monitor, daemon=True)
+    t.start()
+    return stop, t
+
+
 def call(text: str) -> bool:
-    return bool(re.search(r"\bhollali\b", text.lower()))
+    from wake import matches
+
+    return matches(text)

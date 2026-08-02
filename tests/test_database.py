@@ -23,9 +23,7 @@ def _temp_db():
 class TestDatabase:
     def test_init_db_creates_tables(self):
         conn = database._get_conn()
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
         names = [r["name"] for r in tables]
         assert "conversations" in names
         assert "notes" in names

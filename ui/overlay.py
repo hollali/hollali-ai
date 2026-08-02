@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-import database
 from ui.theming import _theme_palette
 from ui.threads import EngineThread
 from ui.widgets import MicIconWidget
@@ -71,12 +70,11 @@ class OverlayWidget(QtWidgets.QWidget):
 
     def apply_theme(self):
         palette = _theme_palette()
-        is_dark = database.get_preference("theme", "dark") == "dark"
         self.setStyleSheet(
             f"OverlayWidget {{ background: {palette['surface']}; border: 1px solid {palette['border']}; border-radius: 14px; }}"
         )
-        text_color = palette['text']
-        sec_color = palette['text_sec']
+        text_color = palette["text"]
+        sec_color = palette["text_sec"]
         self.label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {text_color}; background: transparent;")
         self.partial_label.setStyleSheet(
             f"font-size: 11px; font-style: italic; color: {sec_color}; background: transparent;"
@@ -88,9 +86,7 @@ class OverlayWidget(QtWidgets.QWidget):
 
     def _on_status(self, status: str):
         self.mic.set_listening(status == "conversation")
-        self.label.setText(
-            "Listening..." if status == "conversation" else "Say 'Hollali' to start"
-        )
+        self.label.setText("Listening..." if status == "conversation" else "Say 'Hollali' to start")
 
     def _on_thinking_started(self):
         self.label.setText("Thinking...")

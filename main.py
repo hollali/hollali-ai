@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import threading
-import time
 from queue import Empty, Queue
 
 import config
@@ -35,6 +34,7 @@ def tui_input_loop() -> None:
 # Audio input loop (runs in background thread)
 # ---------------------------------------------------------------------------
 
+
 def audio_input_loop() -> None:
     while not _exit_event.is_set():
         try:
@@ -49,6 +49,7 @@ def audio_input_loop() -> None:
 # Conversation handler
 # ---------------------------------------------------------------------------
 
+
 def _handle_conversation(text: str) -> bool:
     text_lower = text.lower()
 
@@ -62,7 +63,7 @@ def _handle_conversation(text: str) -> bool:
         return False
 
     if config.TUI_MODE:
-        print(f"\nHollali: ", end="", flush=True)
+        print("\nHollali: ", end="", flush=True)
 
     response = process_command(text)
     if response:
@@ -89,6 +90,7 @@ def conversation_loop() -> None:
 # Input gathering (shared between TUI and audio)
 # ---------------------------------------------------------------------------
 
+
 def _get_input(timeout: float | None = None) -> str | None:
     if timeout:
         try:
@@ -106,6 +108,7 @@ def _get_input(timeout: float | None = None) -> str | None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     global _tui_mode
@@ -146,7 +149,7 @@ def main() -> None:
             talk("Goodbye!")
             _exit_event.set()
             sys.exit(0)
-        except Exception as e:
+        except Exception:
             logger.error("Main loop error", exc_info=True)
             if not config.TUI_MODE:
                 talk("I don't know that")

@@ -31,7 +31,8 @@ TWILIO_TO_NUMBER = _getenv("TWILIO_TO_NUMBER")
 
 _raw_calendar_creds = _getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "")
 GOOGLE_CALENDAR_CREDENTIALS_PATH = (
-    _raw_calendar_creds if _raw_calendar_creds and Path(_raw_calendar_creds).is_absolute()
+    _raw_calendar_creds
+    if _raw_calendar_creds and Path(_raw_calendar_creds).is_absolute()
     else str(Path.home() / ".hollali" / (_raw_calendar_creds or "credentials.json"))
 )
 
@@ -44,10 +45,16 @@ CONVERSATION_TIMEOUT = int(_getenv("CONVERSATION_TIMEOUT", "8"))
 STT_ENGINE = _getenv("STT_ENGINE", "google")
 VOSK_MODEL_PATH = _getenv("VOSK_MODEL_PATH", "")
 
+WAKE_WORD = _getenv("WAKE_WORD", "hollali")
+WAKE_ENGINE = _getenv("WAKE_ENGINE", "stt")
+OPENWAKEWORD_MODEL_DIR = _getenv("OPENWAKEWORD_MODEL_DIR", str(Path.home() / ".hollali" / "wakeword"))
+
 TTS_ENGINE = _getenv("TTS_ENGINE", "piper")
 
 PIPER_BIN_PATH = _getenv("PIPER_BIN_PATH", str(Path.home() / ".local" / "bin" / "piper"))
-PIPER_VOICE_PATH = _getenv("PIPER_VOICE_PATH", str(Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx"))
+PIPER_VOICE_PATH = _getenv(
+    "PIPER_VOICE_PATH", str(Path.home() / ".local" / "share" / "piper-tts" / "voices" / "en_US-lessac-medium.onnx")
+)
 NOTES_DIR = _getenv("NOTES_DIR", str(Path.home() / "Documents" / "AssistantNotes"))
 WALLPAPER_DIR = _getenv("WALLPAPER_DIR", str(Path.home() / "Pictures" / "Wallpapers"))
 MUSIC_DIR = _getenv("MUSIC_DIR", str(Path.home() / "Music"))
@@ -57,7 +64,8 @@ TUI_MODE = False
 
 def load_persisted_settings() -> None:
     try:
-        from database import get_preference  # noqa: late import to avoid circular
+        from database import get_preference  # late import to avoid circular
+
         global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT
         stt = get_preference("stt_engine")
         tts = get_preference("tts_engine")
@@ -73,4 +81,5 @@ def load_persisted_settings() -> None:
                 pass
     except Exception as e:
         import logging
+
         logging.getLogger("hollali").warning(f"Failed to load persisted settings: {e}")

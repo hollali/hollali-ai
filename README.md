@@ -4,9 +4,9 @@ A modular, offline-capable voice assistant with a modern **desktop GUI** (PySide
 
 ## Features
 
-- **Wake-word activation** — say "Hollali" to start a conversation, then speak naturally
+- **Wake-word activation** — say "Hollali" (configurable; also matches "hey/ok/okay Hollali") to start a conversation, then speak naturally. Optional `openwakeword` streaming engine for low-latency detection.
 - **Continuous conversation** — configurable silence timeout (default 8s); say "stop listening" or "that's all" to return to idle
-- **Local LLM** — Ollama integration for natural language understanding, tool dispatch, and chat (any installed model)
+- **Local LLM** — Ollama integration with automatic retries and offline fallback for natural language understanding and chat (any installed model)
 - **Dual interfaces** — full desktop GUI (recommended) or terminal text/voice mode
 - **Desktop GUI** — system tray icon, main chat window with side navigation, compact overlay widget
 - **Speech-to-text** — Google STT (online) or Vosk (offline, auto-downloads small model on first use)
@@ -14,10 +14,9 @@ A modular, offline-capable voice assistant with a modern **desktop GUI** (PySide
 - **System controls** — volume (PulseAudio), screen lock, screenshot (ImageMagick), brightness (ACPI backlight)
 - **Plugin system** — drop `.py` files into `plugins/` for custom capabilities
 - **Conversation memory** — last 20 exchanges per session, persisted in SQLite across restarts
-- **Tool dispatch** — LLM intelligently routes requests to built-in handlers (weather, news, email, calendar, etc.)
 - **Streaming responses** — LLM output appears incrementally as it's generated
 - **Dark/light themes** — toggle persisted to SQLite
-- **76 automated tests** — covering commands, database, speech, plugins, system control, utils, and config
+- **110 automated tests** — covering commands, handlers, database, speech, plugins, system control, utils, wake word, LLM, and config
 - **Structured logging** — file + console via `log.py`
 
 ## Requirements
@@ -35,9 +34,9 @@ A modular, offline-capable voice assistant with a modern **desktop GUI** (PySide
 sudo dnf install -y portaudio-devel espeak-ng
 
 # Install Python packages
-pip install -r requirements.txt
-# or editable install
 pip install -e .
+# or with dev tooling (pytest, ruff)
+pip install -e ".[dev]"
 
 # Install Piper TTS
 mkdir -p ~/.local/bin
@@ -90,9 +89,16 @@ Type commands directly. Type `exit` to quit.
 
 ### Wake-word flow
 
-1. **Idle** — listens for "Hollali" on repeat  
+1. **Idle** — listens for the configured wake word (`WAKE_WORD`, default "Hollali"; also matches "hey/ok/okay Hollali") on repeat  
 2. **Conversation** — after wake word, listens with timeout; say "stop listening", "that's all", or "never mind" to return to idle  
 3. **Exit** — say "exit" or "quit", or press `Ctrl+C`
+
+> **Tip:** The default `WAKE_ENGINE=stt` needs no model — the wake word is matched from STT results. For faster, lower-CPU detection, set `WAKE_ENGINE=openwakeword`. openwakeword's built-in keywords (alexa, hey_jarvis, …) won't match your wake word, so you must provide a trained model:
+>
+> 1. Train it with the [openwakeword Colab notebook](https://github.com/alfiedennen/openwakeword-colab-2026) — open it in Colab, switch Runtime to a GPU, edit the `TARGET_PHRASE` and `MODEL_NAME` cells (e.g. `['hollali']` / `hollali`), then **Run all**. No voice recording is needed: it synthesizes clips with Piper TTS and augments them, then downloads `hollali.onnx` (~75–90 min).
+> 2. Place the `.onnx` into `OPENWAKEWORD_MODEL_DIR` (default `~/.hollali/wakeword`).
+> 3. Verify it with `python -m wake` — it prints a live score per frame and flags detections so you can tune the threshold.
+> 4. Only 3D-input wake-word models are loaded; auxiliary files such as `embedding_model.onnx` are ignored. Without any usable model the app logs instructions and falls back to STT detection.
 
 ## Desktop GUI Deep Dive
 
@@ -155,6 +161,14 @@ All configuration via `.env` (copy from `.env.example`):
 | `LLM_API_URL` | `http://localhost:11434/api/chat` | Ollama endpoint |
 | `CONVERSATION_TIMEOUT` | `8` | Silence timeout (seconds) |
 
+### Wake word
+
+| Variable | Default | Description |
+|---|---|---|
+| `WAKE_WORD` | `hollali` | Activation word (also matches "hey/ok/okay \<word\>") |
+| `WAKE_ENGINE` | `stt` | `stt` (works everywhere) or `openwakeword` (streaming, low latency) |
+| `OPENWAKEWORD_MODEL_DIR` | `~/.hollali/wakeword` | Directory of custom `.onnx` wake-word models |
+
 ### API Keys (optional — feature-specific)
 
 | Variable | Service | Required For |
@@ -210,6 +224,7 @@ Drop a `.py` file into `plugins/` with a class exposing `name`, `keywords`, and 
 class Example:
     name = "Example"
     keywords = ["test plugin"]
+
     def handle(self, text: str) -> str | None:
         return "This is an example plugin. It works!"
 ```
@@ -233,9 +248,14 @@ database.py       SQLite persistence (conversations, notes, preferences)
 speech.py         STT (Google/Vosk) + TTS (Piper/espeak/pyttsx3)
 
 # Intelligence
-llm.py            Ollama integration, conversation manager, tool dispatch
-commands.py       Built-in command handlers + LLM routing
+llm.py            Ollama integration (retries, offline fallback), conversation manager
+commands.py       Command registry + routing (keyword handlers, then LLM)
+handlers/         Built-in keyword handlers by concern (conversation, knowledge,
+                  web, system, productivity, time_date)
 system_control.py System commands (volume, brightness, screenshot, lock)
+
+# Wake word
+wake.py           Configurable wake-word matching + optional openwakeword streaming engine
 
 # Extensibility
 plugin_loader.py  Auto-discovers and loads plugins
@@ -258,13 +278,16 @@ ui/
 
 # Tests
 tests/
-├── test_commands.py       28 tests
-├── test_database.py       12 tests
+├── test_commands.py       29 tests
+├── test_database.py       11 tests
 ├── test_config.py          5 tests
 ├── test_plugin_loader.py   5 tests
 ├── test_speech.py          6 tests
-├── test_system_control.py  7 tests
-└── test_utils.py           8 tests
+├── test_system_control.py  8 tests
+├── test_utils.py          10 tests
+├── test_llm.py            10 tests
+├── test_wake.py           18 tests
+└── test_main.py            6 tests
 ```
 
 ### Data flow (desktop GUI)
@@ -313,8 +336,11 @@ MainWindow (Qt main thread) ◄──┘─┘──────┘
 # Run tests
 python -m pytest tests/
 
-# Check code style
+# Check code style and formatting
 ruff check .
+ruff format --check .
+
+# Continuous integration runs lint + tests on every push (see .github/workflows/ci.yml)
 ```
 
 ## License

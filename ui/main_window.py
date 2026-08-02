@@ -264,7 +264,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.send_btn.hide()
         self._streaming_bubble = None
 
-        if hasattr(self, '_text_thread') and self._text_thread.isRunning():
+        if hasattr(self, "_text_thread") and self._text_thread.isRunning():
             self._text_thread.requestInterruption()
             self._text_thread.quit()
             self._text_thread.wait(500)
@@ -277,7 +277,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._text_thread.start()
 
     def _cancel_text(self):
-        if hasattr(self, '_text_thread') and self._text_thread.isRunning():
+        if hasattr(self, "_text_thread") and self._text_thread.isRunning():
             self._text_thread.requestInterruption()
             self._text_thread.quit()
             self._text_thread.wait(500)
@@ -354,6 +354,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         event.ignore()
         self.hide()
-        if not hasattr(self, '_minimize_toast_shown'):
+        if not hasattr(self, "_minimize_toast_shown"):
             self._minimize_toast_shown = True
             self.toast.show_message("Hollali minimized to tray. Click tray icon to show.", 4000, "info")

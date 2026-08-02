@@ -3,13 +3,14 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from log import logger
 
 PLUGIN_DIR = Path(__file__).parent / "plugins"
 _loaded_plugins: list[object] = []
+_discovered = False
 _PLUGIN_TIMEOUT = 5
 
 
@@ -24,6 +25,7 @@ def _run_with_timeout(fn: Callable[[str], str | None], text: str, timeout: int) 
             exc[0] = e
 
     import threading
+
     t = threading.Thread(target=worker, daemon=True)
     t.start()
     t.join(timeout)
@@ -68,11 +70,13 @@ def discover() -> list[dict]:
                 logger.error(f"Plugin instantiation error ({name}): {e}", exc_info=True)
                 continue
             if hasattr(plugin, "name") and hasattr(plugin, "handle"):
-                plugins.append({
-                    "name": plugin.name,
-                    "keywords": getattr(plugin, "keywords", [plugin.name.lower()]),
-                    "instance": plugin,
-                })
+                plugins.append(
+                    {
+                        "name": plugin.name,
+                        "keywords": getattr(plugin, "keywords", [plugin.name.lower()]),
+                        "instance": plugin,
+                    }
+                )
                 _loaded_plugins.append(plugin)
                 logger.info(f"Loaded plugin: {plugin.name}")
 
@@ -80,6 +84,10 @@ def discover() -> list[dict]:
 
 
 def match(text: str) -> str | None:
+    global _discovered
+    if not _discovered:
+        discover()
+        _discovered = True
     for p in _loaded_plugins:
         for kw in getattr(p, "keywords", []):
             if kw in text.lower():
