@@ -144,3 +144,28 @@ class TestCommands:
     def test_handle_weather_no_keyword(self):
         result = commands.handle_weather("hello")
         assert result == ""
+
+    @patch("handlers.knowledge._http.get")
+    def test_handle_weather_invalid_key_does_not_crash(self, mock_get):
+        mock_get.return_value.json.return_value = {"cod": 401, "message": "Invalid API key"}
+        with patch("config.WEATHER_API_KEY", "bad-key"):
+            result = commands.handle_weather("weather in London")
+        assert "unavailable" in result
+        assert "Invalid API key" in result
+
+    @patch("handlers.knowledge._http.get")
+    def test_handle_weather_success(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "cod": 200,
+            "main": {"temp": 293.15, "humidity": 60},
+            "weather": [{"description": "clear sky"}],
+        }
+        with patch("config.WEATHER_API_KEY", "good-key"):
+            result = commands.handle_weather("weather in London")
+        assert "20.0" in result
+        assert "60%" in result
+        assert "clear sky" in result
+
+    def test_handle_news_is_case_insensitive(self):
+        with patch("config.NEWS_API_KEY", ""):
+            assert "not configured" in commands.handle_news("Latest News")

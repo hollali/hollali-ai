@@ -49,6 +49,33 @@ _PIPER_VOICE = Path(config.PIPER_VOICE_PATH)
 
 _piper_available: bool | None = None
 _piper_lock = threading.Lock()
+_active_process: subprocess.Popen | None = None
+_active_process_lock = threading.Lock()
+_speech_cancelled = threading.Event()
+
+
+def _track_process(process: subprocess.Popen | None) -> None:
+    global _active_process
+    with _active_process_lock:
+        _active_process = process
+
+
+def stop_speaking() -> bool:
+    """Interrupt the active TTS process when the selected engine supports it."""
+    _speech_cancelled.set()
+    with _active_process_lock:
+        process = _active_process
+    stopped = False
+    if process and process.poll() is None:
+        process.terminate()
+        stopped = True
+    if _tts_engine is not None:
+        try:
+            _tts_engine.stop()
+            stopped = True
+        except Exception:
+            pass
+    return stopped
 
 
 def _check_piper() -> bool:
@@ -71,8 +98,12 @@ def _talk_piper(text: str) -> None:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+            _track_process(piper)
             raw_out, piper_err = piper.communicate(input=text.encode(), timeout=30)
+            _track_process(None)
             if piper.returncode != 0:
+                if _speech_cancelled.is_set():
+                    return
                 logger.warning(f"Piper failed (rc={piper.returncode}): {piper_err.decode().strip()}")
                 _talk_espeak(text)
                 return
@@ -100,13 +131,17 @@ def _talk_piper(text: str) -> None:
                 wf.write(raw_out)
 
             for player in ("pw-play", "paplay"):
+                if _speech_cancelled.is_set():
+                    return
                 try:
-                    subprocess.run(
-                        [player, str(wav_path)],
-                        capture_output=True,
-                        timeout=60,
-                        check=True,
+                    playback = subprocess.Popen(
+                        [player, str(wav_path)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
                     )
+                    _track_process(playback)
+                    _, stderr = playback.communicate(timeout=60)
+                    _track_process(None)
+                    if playback.returncode != 0:
+                        raise subprocess.CalledProcessError(playback.returncode, [player], stderr=stderr)
                     break
                 except (FileNotFoundError, subprocess.CalledProcessError):
                     continue
@@ -114,19 +149,27 @@ def _talk_piper(text: str) -> None:
                 raise RuntimeError("No audio player found (pw-play, paplay)")
             wav_path.unlink(missing_ok=True)
         except Exception as e:
+            _track_process(None)
             logger.warning(f"Piper playback error: {e}", exc_info=True)
-            _talk_espeak(text)
+            if not _speech_cancelled.is_set():
+                _talk_espeak(text)
 
 
 def _talk_espeak(text: str) -> None:
-    result = subprocess.run(
+    if _speech_cancelled.is_set():
+        return
+    process = subprocess.Popen(
         ["espeak-ng", text, "-v", "en-us", "-s", "120", "-p", "50", "-a", "200"],
-        capture_output=True,
-        timeout=30,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
     )
-    if result.returncode != 0:
-        stderr = result.stderr.decode().strip()
-        logger.warning(f"espeak-ng failed (rc={result.returncode}): {stderr}")
+    _track_process(process)
+    try:
+        _, stderr = process.communicate(timeout=30)
+    finally:
+        _track_process(None)
+    if process.returncode != 0 and not _speech_cancelled.is_set():
+        logger.warning(f"espeak-ng failed (rc={process.returncode}): {stderr.decode().strip()}")
 
 
 _talk_pool: concurrent.futures.ThreadPoolExecutor | None = None
@@ -141,10 +184,11 @@ def is_speaking() -> bool:
 
 def talk(text: str) -> None:
     global _speaking
+    _speech_cancelled.clear()
     with _speaking_lock:
         _speaking = True
     try:
-        logger.info(text)
+        logger.debug("Starting text-to-speech playback")
         if config.TTS_ENGINE == "piper":
             _talk_piper(text)
         elif config.TTS_ENGINE == "espeak":
@@ -176,6 +220,7 @@ def talk_async(text: str) -> None:
 
 _vosk_model = None
 _vosk_init_lock = threading.Lock()
+_recording_lock = threading.RLock()
 
 
 def _init_vosk() -> None:
@@ -228,9 +273,10 @@ def rec_audio(
     partial_cb: Callable[[str], None] | None = None,
     level_cb: Callable[[float], None] | None = None,
 ) -> str:
-    if config.STT_ENGINE == "vosk":
-        return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
-    return _rec_google(timeout, phrase_limit, partial_cb=partial_cb, level_cb=level_cb)
+    with _recording_lock:
+        if config.STT_ENGINE == "vosk":
+            return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
+        return _rec_google(timeout, phrase_limit, partial_cb=partial_cb, level_cb=level_cb)
 
 
 def _rec_vosk(
@@ -286,7 +332,7 @@ def _rec_vosk(
                 result = json.loads(rec.Result())
                 text = result.get("text", "").strip()
                 if text:
-                    logger.info(f"You said: {text}")
+                    logger.debug("Speech recognized (%d characters)", len(text))
                     return text
                 last_activity = time.time()
             partial = json.loads(rec.PartialResult())
@@ -309,24 +355,19 @@ def _rec_google(
 ) -> str:
     """Google STT via speech_recognition.
 
-    Note: Google's free web API does not expose partial (streaming) transcripts,
-    so ``partial_cb`` is only honored by the Vosk engine. ``level_cb`` is
-    approximated with a parallel energy monitor so the waveform still works.
+    ``partial_cb`` and ``level_cb`` are only honored by the Vosk engine. Google
+    STT does not expose streaming transcripts, and opening a second capture
+    stream to estimate levels races PyAudio on the same device (native crashes
+    on some systems), so the waveform is provided by the offline path only.
     """
     if partial_cb:
         _warn_google_no_partials()
-
-    monitor_stop: threading.Event | None = None
-    if level_cb:
-        monitor_stop, monitor = _start_level_monitor(level_cb)
 
     try:
         import speech_recognition as sr
     except ImportError:
         logger.warning("speech_recognition not installed, falling back to Vosk")
         config.STT_ENGINE = "vosk"
-        if monitor_stop:
-            monitor_stop.set()
         return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
 
     recog = sr.Recognizer()
@@ -356,13 +397,11 @@ def _rec_google(
             config.STT_ENGINE = "vosk"
         return _rec_vosk(timeout, partial_cb=partial_cb, level_cb=level_cb)
     finally:
-        if monitor_stop:
-            monitor_stop.set()
         _devnull.close()
 
     try:
         data = recog.recognize_google(audio)
-        logger.info(f"You said: {data}")
+        logger.debug("Speech recognized (%d characters)", len(data))
         return data
     except sr.UnknownValueError:
         return ""
@@ -381,34 +420,6 @@ def _warn_google_no_partials() -> None:
         logger.warning(
             "Google STT does not support live partial transcripts; switch STT_ENGINE=vosk for the streaming preview."
         )
-
-
-def _start_level_monitor(level_cb: Callable[[float], None]) -> tuple[threading.Event, threading.Thread | None]:
-    """Run a background mic-energy monitor for the waveform widget.
-
-    Opens a separate input stream (Vosk-style), so if the device is busy it
-    degrades gracefully to no level updates instead of breaking STT.
-    """
-    stop = threading.Event()
-
-    def _monitor() -> None:
-        try:
-            import sounddevice as sd
-
-            with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype="int16", channels=1) as stream:
-                while not stop.is_set():
-                    try:
-                        data, _ = stream.read(8000)
-                    except Exception:
-                        break
-                    if level_cb:
-                        level_cb(min(1.0, _rms(bytes(data)) / 8000.0))
-        except Exception:
-            logger.debug("Level monitor unavailable for Google STT", exc_info=True)
-
-    t = threading.Thread(target=_monitor, daemon=True)
-    t.start()
-    return stop, t
 
 
 def call(text: str) -> bool:

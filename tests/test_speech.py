@@ -29,3 +29,8 @@ class TestSpeech:
 
     def test_rms_with_empty_data(self):
         assert speech._rms(b"") == 0.0
+
+    def test_google_stt_no_parallel_capture_stream(self):
+        # A second level-monitor stream raced PyAudio on the same device and
+        # crashed the process natively, so it must not come back.
+        assert not hasattr(speech, "_start_level_monitor")

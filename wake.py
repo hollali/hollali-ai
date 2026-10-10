@@ -188,7 +188,10 @@ def wake_listener_active() -> bool:
     return get_detector().active
 
 
-def listen_for_wake(level_cb: Callable[[float], None] | None = None) -> str:
+def listen_for_wake(
+    level_cb: Callable[[float], None] | None = None,
+    stop_event: threading.Event | None = None,
+) -> str:
     """Block until the wake word is heard (openwakeword engine).
 
     Returns the configured wake word so callers can treat it as if STT heard
@@ -203,6 +206,8 @@ def listen_for_wake(level_cb: Callable[[float], None] | None = None) -> str:
 
         with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype="int16", channels=1) as stream:
             while True:
+                if stop_event and stop_event.is_set():
+                    return ""
                 try:
                     data, _ = stream.read(8000)
                 except Exception:

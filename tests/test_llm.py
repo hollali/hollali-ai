@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -119,3 +120,19 @@ class TestQueryChatStream:
         assert events[0][0] == "chunk"
         assert events[1][0] == "done"
         assert events[1][1] == ""
+
+    def test_cancelled_stream_closes_response_without_saving(self, manager):
+        cancel_event = threading.Event()
+        cancel_event.set()
+        response = MagicMock(status_code=200)
+        session = MagicMock()
+        session.post.return_value = response
+        with (
+            patch.object(manager, "_build_messages", return_value=[]),
+            patch.object(manager, "_get_session", return_value=session),
+            patch.object(manager, "_append_both") as save,
+        ):
+            events = list(manager.query_chat_stream("stop", cancel_event=cancel_event, persist=False))
+        assert events == [("done", "")]
+        response.close.assert_called_once()
+        save.assert_not_called()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from threading import Event
 from typing import Literal
 
 import config
@@ -106,9 +107,15 @@ def process_command(text: str) -> str:
     return "I didn't understand that."
 
 
-def process_command_stream(text: str) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
+def process_command_stream(
+    text: str,
+    chat_manager=None,
+    cancel_event: Event | None = None,
+    check_exit: bool = True,
+) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
     """Generator yielding ("chunk", partial_text) or ("done", final_text)."""
-    _run_handlers(text, ["handle_exit"])
+    if check_exit:
+        _run_handlers(text, ["handle_exit"])
 
     kw_result = _run_handlers(text, ["handle_system", "handle_plugins"])
     if kw_result:
@@ -122,7 +129,11 @@ def process_command_stream(text: str) -> Generator[tuple[Literal["chunk", "done"
         return
 
     if config.LLM_ENABLED:
-        yield from llm.query_chat_stream(text)
+        manager = chat_manager or llm
+        if chat_manager is None and cancel_event is None:
+            yield from llm.query_chat_stream(text)
+        else:
+            yield from manager.query_chat_stream(text, cancel_event=cancel_event, persist=chat_manager is None)
         return
 
     yield ("done", "I didn't understand that.")

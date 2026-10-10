@@ -130,30 +130,52 @@ class ConversationManager:
                 time.sleep(RETRY_BACKOFF[attempt])
         raise requests.RequestException(f"Ollama unreachable after {MAX_RETRIES} attempts") from last_error
 
-    def _iter_stream(self, resp: requests.Response) -> Generator[str, None, None]:
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "error" in data:
-                logger.error(f"Ollama error: {data['error']}")
-                continue
-            if "message" in data and "content" in data["message"]:
-                chunk = data["message"]["content"]
-                if chunk:
-                    yield chunk
-            if data.get("done"):
-                break
+    def _iter_stream(
+        self, resp: requests.Response, cancel_event: threading.Event | None = None
+    ) -> Generator[str, None, None]:
+        watcher_stop = threading.Event()
+        watcher = None
+        if cancel_event:
 
-    def _append_both(self, user_input: str, reply: str) -> None:
+            def close_on_cancel() -> None:
+                while not watcher_stop.wait(0.05):
+                    if cancel_event.is_set():
+                        resp.close()
+                        return
+
+            watcher = threading.Thread(target=close_on_cancel, name="hollali-ollama-cancel", daemon=True)
+            watcher.start()
+        try:
+            for line in resp.iter_lines():
+                if cancel_event and cancel_event.is_set():
+                    break
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if "error" in data:
+                    logger.error(f"Ollama error: {data['error']}")
+                    continue
+                if "message" in data and "content" in data["message"]:
+                    chunk = data["message"]["content"]
+                    if chunk:
+                        yield chunk
+                if data.get("done"):
+                    break
+        finally:
+            watcher_stop.set()
+            if watcher:
+                watcher.join(timeout=0.1)
+
+    def _append_both(self, user_input: str, reply: str, persist: bool = True) -> None:
         with self._lock:
             self._history.append({"role": "user", "content": user_input})
             self._history.append({"role": "assistant", "content": reply})
-        self._save("user", user_input)
-        self._save("assistant", reply)
+        if persist:
+            self._save("user", user_input)
+            self._save("assistant", reply)
 
     def query_chat(self, user_input: str) -> str:
         messages = self._build_messages(user_input, _build_chat_system_prompt())
@@ -169,23 +191,33 @@ class ConversationManager:
             self._append_both(user_input, reply)
         return reply
 
-    def query_chat_stream(self, user_input: str) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
+    def query_chat_stream(
+        self,
+        user_input: str,
+        cancel_event: threading.Event | None = None,
+        persist: bool = True,
+    ) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
         messages = self._build_messages(user_input, _build_chat_system_prompt())
         full_content = ""
+        resp = None
         try:
             resp = self._post(messages, stream=True, temperature=0.7)
             resp.raise_for_status()
-            for chunk in self._iter_stream(resp):
+            for chunk in self._iter_stream(resp, cancel_event=cancel_event):
                 full_content += chunk
                 yield ("chunk", chunk)
         except Exception as e:
-            logger.error(f"LLM query failed: {e}")
-            yield ("chunk", "[LLM error — is Ollama running?]")
+            if not (cancel_event and cancel_event.is_set()):
+                logger.error(f"LLM query failed: {e}")
+                yield ("chunk", "[LLM error — is Ollama running?]")
             yield ("done", "")
             return
+        finally:
+            if resp is not None:
+                resp.close()
 
-        if full_content.strip():
-            self._append_both(user_input, full_content.strip())
+        if full_content.strip() and not (cancel_event and cancel_event.is_set()):
+            self._append_both(user_input, full_content.strip(), persist=persist)
         yield ("done", full_content.strip())
 
 
@@ -196,8 +228,12 @@ def query_chat(user_input: str) -> str:
     return manager.query_chat(user_input)
 
 
-def query_chat_stream(user_input: str) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
-    yield from manager.query_chat_stream(user_input)
+def query_chat_stream(
+    user_input: str,
+    cancel_event: threading.Event | None = None,
+    persist: bool = True,
+) -> Generator[tuple[Literal["chunk", "done"], str], None, None]:
+    yield from manager.query_chat_stream(user_input, cancel_event=cancel_event, persist=persist)
 
 
 def check_available(timeout: float = 3.0) -> bool:

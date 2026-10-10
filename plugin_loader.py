@@ -97,3 +97,12 @@ def match(text: str) -> str | None:
                     logger.error(f"Plugin error ({p.name}): {e}", exc_info=True)
                     return None
     return None
+
+
+def list_loaded() -> list[dict[str, str]]:
+    """Return public plugin names without exposing plugin objects or internals."""
+    global _discovered
+    if not _discovered:
+        discover()
+        _discovered = True
+    return [{"name": str(plugin.name)} for plugin in _loaded_plugins if hasattr(plugin, "name")]

@@ -70,15 +70,31 @@ def handle_weather(text: str) -> str:
     except requests.RequestException:
         return " Could not fetch weather data. Please check your connection."
 
-    if isinstance(js.get("cod"), str) and js["cod"] == "404":
-        return " City Not Found"
+    cod = js.get("cod")
+    if cod not in (200, "200"):
+        message = js.get("message", "") or ""
+        if str(cod) == "404":
+            return " City Not Found"
+        return f" Weather service is unavailable ({cod}).{(' ' + message) if message else ''}".strip()
 
-    weather = js["main"]
-    temperature = weather["temp"] - 273.15
-    humidity = weather["humidity"]
-    desc = js["weather"][0]["description"]
+    weather = js.get("main")
+    if not isinstance(weather, dict):
+        return " Could not load weather data."
+
+    temperature = weather.get("temp")
+    humidity = weather.get("humidity")
+    if not isinstance(temperature, (int, float)) or not isinstance(humidity, (int, float)):
+        return " Could not load the current weather details."
+
+    weather_desc = js.get("weather")
+    desc = (
+        weather_desc[0].get("description", "no details")
+        if isinstance(weather_desc, list) and weather_desc
+        else "no details"
+    )
+    temp_c = temperature - 273.15
     return (
-        f" The temperature in Celsius is {temperature:.1f}, "
+        f" The temperature in Celsius is {temp_c:.1f}, "
         f"the humidity is {humidity}%, "
         f"and the weather description is {desc}."
     )
@@ -91,7 +107,7 @@ def handle_joke(text: str) -> str:
 
 
 def handle_news(text: str) -> str:
-    if "news" not in text:
+    if "news" not in text.lower():
         return ""
 
     if not config.NEWS_API_KEY:

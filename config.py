@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+load_dotenv(Path.home() / ".hollali" / ".env", override=False)
 
 
 def _getenv(key: str, default: str = "") -> str:
@@ -66,10 +67,11 @@ def load_persisted_settings() -> None:
     try:
         from database import get_preference  # late import to avoid circular
 
-        global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT
+        global STT_ENGINE, TTS_ENGINE, CONVERSATION_TIMEOUT, LLM_MODEL
         stt = get_preference("stt_engine")
         tts = get_preference("tts_engine")
         timeout = get_preference("conversation_timeout")
+        llm_model = get_preference("llm_model")
         if stt:
             STT_ENGINE = stt
         if tts:
@@ -79,6 +81,8 @@ def load_persisted_settings() -> None:
                 CONVERSATION_TIMEOUT = int(timeout)
             except ValueError:
                 pass
+        if llm_model:
+            LLM_MODEL = llm_model
     except Exception as e:
         import logging
 

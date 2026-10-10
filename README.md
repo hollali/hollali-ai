@@ -1,347 +1,155 @@
-# Hollali — Voice Assistant
+# Hollali — Local AI Web Assistant
 
-A modular, offline-capable voice assistant with a modern **desktop GUI** (PySide6) and **terminal** interface. Hollali integrates local LLM inference via Ollama, system controls, a plugin system, conversation memory, and multiple speech I/O engines. The desktop UI is inspired by ChatGPT and Claude — clean chat bubbles, streaming responses, dark/light themes, and a collapsible side navigation panel.
+Hollali is a local-first AI assistant with a browser-based React interface and a Python backend. The web app replaces the former desktop UI. Python remains responsible for Ollama, command routing, speech, wake-word detection, system controls, plugins, and SQLite persistence.
 
 ## Features
 
-- **Wake-word activation** — say "Hollali" (configurable; also matches "hey/ok/okay Hollali") to start a conversation, then speak naturally. Optional `openwakeword` streaming engine for low-latency detection.
-- **Continuous conversation** — configurable silence timeout (default 8s); say "stop listening" or "that's all" to return to idle
-- **Local LLM** — Ollama integration with automatic retries and offline fallback for natural language understanding and chat (any installed model)
-- **Dual interfaces** — full desktop GUI (recommended) or terminal text/voice mode
-- **Desktop GUI** — system tray icon, main chat window with side navigation, compact overlay widget
-- **Speech-to-text** — Google STT (online) or Vosk (offline, auto-downloads small model on first use)
-- **Text-to-speech** — Piper TTS (default), espeak-ng, or pyttsx3
-- **System controls** — volume (PulseAudio), screen lock, screenshot (ImageMagick), brightness (ACPI backlight)
-- **Plugin system** — drop `.py` files into `plugins/` for custom capabilities
-- **Conversation memory** — last 20 exchanges per session, persisted in SQLite across restarts
-- **Streaming responses** — LLM output appears incrementally as it's generated
-- **Dark/light themes** — toggle persisted to SQLite
-- **110 automated tests** — covering commands, handlers, database, speech, plugins, system control, utils, wake word, LLM, and config
-- **Structured logging** — file + console via `log.py`
+- **Browser chat** — streamed assistant replies, Markdown and code highlighting, search, persistent history, rename and delete
+- **Voice workspace** — real microphone input, live transcription/audio events where supported, wake-word status, interrupt, and speech playback
+- **Installable web app (PWA)** — works as a desktop/mobile app; installs from the browser and opens offline
+- **Local model support** — uses Ollama and lists models actually installed on the configured endpoint
+- **Settings** — theme, model, speech engines, listening timeout, and background wake listening, stored in the existing SQLite database
+- **System controls** — volume, brightness, screenshot, and screen lock through existing Python handlers
+- **Plugins and integrations** — existing Python plugin contract and optional weather, calendar, Gmail, and SMS integrations
+- **Dark and light themes**
+- **Terminal modes** — text and voice CLI remain available
+
+Google speech recognition and optional integrations may contact their configured providers. Vosk and Ollama can run locally.
 
 ## Requirements
 
-- **Python** 3.11+
-- **Ollama** — for local LLM ([ollama.ai](https://ollama.ai))
-- **PyAudio** — for Google STT (`portaudio-devel` + `pyaudio` pip package)
-- **Piper TTS** — default speech engine
-- **espeak-ng** — optional fallback TTS
+- Python 3.11+
+- Node.js 22.12+ and npm (for building the frontend)
+- Ollama and at least one installed model
+- `portaudio-devel`, Python development headers, and PyAudio for Google STT; Vosk is an offline alternative
+- Piper TTS (recommended) or `espeak-ng`
 
-## Quick Start
+## Quick start
+
+Fedora system dependencies:
 
 ```bash
-# Install system dependencies (Fedora example)
-sudo dnf install -y portaudio-devel espeak-ng
+sudo dnf install -y portaudio-devel python3-devel espeak-ng
+```
 
-# Install Python packages
-pip install -e .
-# or with dev tooling (pytest, ruff)
-pip install -e ".[dev]"
+From the project checkout:
 
-# Install Piper TTS
-mkdir -p ~/.local/bin
-# Download piper_linux_x86_64.tar.gz from https://github.com/rhasspy/piper/releases
-tar xzf piper_linux_x86_64.tar.gz -C ~/.local/bin/
-mkdir -p ~/.local/share/piper-tts/voices
-# Download en_US-lessac-medium.onnx + .json from
-#   https://huggingface.co/rhasspy/piper-voices
-# and place both in ~/.local/share/piper-tts/voices/
-
-# Configure environment
+```bash
+python -m pip install -e ".[web,dev]"
+npm ci --prefix frontend
 cp .env.example .env
-# Edit .env with your API keys (optional — only needed for specific features)
-
-# Launch desktop app
-hollali-desktop
+# Configure optional API keys and Ollama settings in .env
+npm run build --prefix frontend
+hollali-web
 ```
 
-## Usage
+`hollali-web` starts the Python services on `127.0.0.1:8765` and opens the web app in your browser. The Python service owns the wake-word listener for as long as it is running, including when the browser is closed. Stop the service with `Ctrl+C`.
 
-### Desktop GUI (recommended)
+Conversation history, settings, and notes continue to use `~/.hollali/hollali.db`. The title metadata table is additive; existing conversation records are preserved.
+
+## Frontend development
+
+Run the backend and Vite separately:
 
 ```bash
-hollali-desktop    # or python3 desktop.py
+# Terminal 1 — API, voice listener, and existing Python services
+hollali-web
+
+# Terminal 2 — React development server
+npm --prefix frontend run dev
 ```
 
-Launches a system tray icon and the main chat window. The interface is divided into:
+Open `http://127.0.0.1:1420`. Vite’s origin is explicitly allowed for local development. Set `VITE_HOLLALI_API_URL` in `frontend/.env.local` only if the API uses a non-default loopback port.
 
-- **Side navigation** (collapsible with `Ctrl+B`) — new chat, conversation history, theme toggle, settings
-- **Chat area** — streaming AI responses, user messages, thinking indicator, waveform visualizer
-- **Input bar** — type your message or click the mic button for voice input
+For a standalone frontend build, run `npm run build --prefix frontend`; the Python service serves `frontend/dist` from `/`. No conversation data or microphone audio is served to a remote host.
 
-Minimize to tray instead of quitting — click the tray icon to restore.
+## Terminal use
 
-### Terminal / Voice mode
+Voice mode:
 
 ```bash
-hollali            # or python3 main.py
+hollali
 ```
 
-Say **"Hollali"** to activate, then speak your command. The assistant listens continuously with an 8-second silence timeout.
+Say **“Hollali”**, then speak naturally. The default silence timeout is 8 seconds. Say “stop listening” or “that’s all” to return to idle.
 
-### Terminal / Text mode
+Text mode:
 
 ```bash
-hollali --text     # or python3 main.py --text
+hollali --text
 ```
 
-Type commands directly. Type `exit` to quit.
+## Wake word and speech
 
-### Wake-word flow
+The default `WAKE_ENGINE=stt` detects the configured wake phrase from recognition results. `WAKE_ENGINE=openwakeword` can use a custom ONNX model placed in `~/.hollali/wakeword`; otherwise Hollali falls back to STT detection. Run `python -m wake` to inspect a trained model’s live scores.
 
-1. **Idle** — listens for the configured wake word (`WAKE_WORD`, default "Hollali"; also matches "hey/ok/okay Hollali") on repeat  
-2. **Conversation** — after wake word, listens with timeout; say "stop listening", "that's all", or "never mind" to return to idle  
-3. **Exit** — say "exit" or "quit", or press `Ctrl+C`
+The web app exposes a **Background listening** toggle (Settings → Voice). When disabled, the Python service stops sampling the microphone while idle and only records during an active voice session. For a fully offline wake path, prefer `WAKE_ENGINE=openwakeword`, or `STT_ENGINE=vosk` so recognition stays on-device.
 
-> **Tip:** The default `WAKE_ENGINE=stt` needs no model — the wake word is matched from STT results. For faster, lower-CPU detection, set `WAKE_ENGINE=openwakeword`. openwakeword's built-in keywords (alexa, hey_jarvis, …) won't match your wake word, so you must provide a trained model:
->
-> 1. Train it with the [openwakeword Colab notebook](https://github.com/alfiedennen/openwakeword-colab-2026) — open it in Colab, switch Runtime to a GPU, edit the `TARGET_PHRASE` and `MODEL_NAME` cells (e.g. `['hollali']` / `hollali`), then **Run all**. No voice recording is needed: it synthesizes clips with Piper TTS and augments them, then downloads `hollali.onnx` (~75–90 min).
-> 2. Place the `.onnx` into `OPENWAKEWORD_MODEL_DIR` (default `~/.hollali/wakeword`).
-> 3. Verify it with `python -m wake` — it prints a live score per frame and flags detections so you can tune the threshold.
-> 4. Only 3D-input wake-word models are loaded; auxiliary files such as `embedding_model.onnx` are ignored. Without any usable model the app logs instructions and falls back to STT detection.
-
-## Desktop GUI Deep Dive
-
-### Main Window
-
-| Element | Description |
-|---|---|
-| **Chat bubbles** | User messages right-aligned with surface background; AI responses left-aligned with accent border. Hover to reveal Copy button |
-| **Streaming text** | AI responses appear token-by-token as the LLM generates them |
-| **Thinking indicator** | Animated dots while the LLM processes |
-| **Cancel button** | Stops an in-flight response |
-| **Mic button** | Custom-painted toggle — green when active |
-| **Send button** | Appears when text is entered; `Enter` to send |
-| **Waveform** | 20-bar animated audio level meter |
-| **Partial text** | Live STT recognition preview (italic, auto-fades after 3s) |
-| **Welcome screen** | Suggestion chips (Weather, News, Joke, Time, Date) |
-| **Toast notifications** | Fade-in/fade-out messages for events (theme change, new chat, errors) |
-
-### Side Navigation
-
-- **New Chat** — clears the conversation
-- **History list** — last 30 sessions, click to reload
-- **Theme toggle** — switches dark/light mode
-- **Settings** — STT/TTS engine, timeout, theme, auto-start
-
-### Overlay Mode
-
-A compact, frameless always-on-top widget showing listening status, last response, and live partial STT. Draggable, auto-positions at top-right of screen. Close with ✕ or `Escape`.
-
-### System Tray
-
-- Microphone icon
-- **Left-click** — toggle main window visibility
-- **Right-click menu** — Show Window, Start/Stop Listening, Show Overlay, Quit
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+Q` | Quit |
-| `Ctrl+M` | Toggle microphone |
-| `Ctrl+,` | Settings |
-| `Ctrl+B` | Toggle sidebar |
-| `Enter` | Send message |
-| `Shift+Enter` | New line in input |
-| `Escape` | Minimize window / close overlay |
-
-## Configuration
-
-All configuration via `.env` (copy from `.env.example`):
-
-### Core
+Configure speech in `.env` or `~/.hollali/.env`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `STT_ENGINE` | `google` | `google` or `vosk` |
+| `STT_ENGINE` | `google` | `google` or offline `vosk` |
 | `TTS_ENGINE` | `piper` | `piper`, `espeak`, or `pyttsx3` |
-| `LLM_ENABLED` | `true` | Enable local LLM |
-| `LLM_MODEL` | `qwen:latest` | Ollama model name |
-| `LLM_API_URL` | `http://localhost:11434/api/chat` | Ollama endpoint |
-| `CONVERSATION_TIMEOUT` | `8` | Silence timeout (seconds) |
+| `WAKE_WORD` | `hollali` | Activation word |
+| `WAKE_ENGINE` | `stt` | `stt` or `openwakeword` |
+| `CONVERSATION_TIMEOUT` | `8` | Listening timeout in seconds |
 
-### Wake word
+## Web API and local security
 
-| Variable | Default | Description |
-|---|---|---|
-| `WAKE_WORD` | `hollali` | Activation word (also matches "hey/ok/okay \<word\>") |
-| `WAKE_ENGINE` | `stt` | `stt` (works everywhere) or `openwakeword` (streaming, low latency) |
-| `OPENWAKEWORD_MODEL_DIR` | `~/.hollali/wakeword` | Directory of custom `.onnx` wake-word models |
+The React app and Python service communicate over HTTP and WebSockets. The backend binds to loopback only, validates `Host` and browser origins, and issues an `HttpOnly`, `SameSite=Strict` session cookie. JavaScript does not receive the API secret. Chat responses use newline-delimited JSON; `/api/events` carries live voice and transcription events.
 
-### API Keys (optional — feature-specific)
-
-| Variable | Service | Required For |
-|---|---|---|
-| `WEATHER_API_KEY` | OpenWeatherMap | Weather |
-| `NEWS_API_KEY` | NewsAPI | News headlines |
-| `WOLFRAM_APP_ID` | WolframAlpha | What-is / calculate |
-| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | Gmail | Email sending |
-| `TWILIO_*` | Twilio | SMS messaging |
-| `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Google Calendar | Calendar events |
-
-### File paths
-
-| Variable | Default | Description |
-|---|---|---|
-| `PIPER_BIN_PATH` | `~/.local/bin/piper` | Piper binary |
-| `PIPER_VOICE_PATH` | `~/.local/share/piper-tts/voices/en_US-lessac-medium.onnx` | Voice model |
-| `NOTES_DIR` | `~/Documents/notes/` | Note storage |
-| `WALLPAPER_DIR` | `~/Pictures/wallpapers/` | Wallpaper images |
-| `MUSIC_DIR` | `~/Music/` | Music files |
-
-Settings changed via the GUI are persisted to SQLite and take precedence over `.env` defaults.
-
-## Commands
-
-Built-in keyword handlers run before the LLM for instant response. If no keyword matches, the LLM handles the query conversationally.
-
-| Category | Triggers |
+| Operation | Endpoint |
 |---|---|
-| **System** | "volume 50", "brightness 75", "screenshot", "lock" |
-| **Greetings** | "hello", "hi", "how are you", "what's your name" |
-| **Time/Date** | "what time is it", "what's the date" |
-| **Weather** | "weather in London" or "weather Paris" |
-| **News** | "latest news", "news headlines" |
-| **Jokes** | "tell me a joke" |
-| **Wikipedia** | "who is Albert Einstein" or "search wikipedia for Python" |
-| **WolframAlpha** | "what is the speed of light", "calculate 2+2" |
-| **Email** | "send email to John" (prompts for content and recipient) |
-| **Notes** | "make a note" (prompts for content) |
-| **SMS** | "send message" (prompts for content) |
-| **Calendar** | "what's on my calendar" |
-| **Open** | "open YouTube", "open Google" |
-| **Search** | "search YouTube for cats", "search Google for weather" |
-| **Music** | "play some music" (random file from `MUSIC_DIR`) |
-| **Wallpaper** | "change my wallpaper" |
-| **Sleep** | "stop listening for 10 seconds" |
+| Browser session | `GET /api/session` |
+| Stream or cancel chat | `POST /api/chat/stream`, `POST /api/chat/{request_id}/cancel` |
+| List, search, load, rename, delete conversations | `/api/conversations` and `/api/conversations/{id}` |
+| Read and update supported settings | `GET/PATCH /api/settings` |
+| Ollama health and installed models | `GET /api/health`, `GET /api/models` |
+| List loaded plugins | `GET /api/plugins` |
+| Start, stop, or interrupt voice | `POST /api/voice` |
+| Voice-state and audio events | `WS /api/events` |
 
-## Plugin System
+Plugin enable/disable and per-plugin configuration are not offered because the existing plugin loader does not support those operations. The interface reports discovered plugins without presenting unsupported controls.
 
-Drop a `.py` file into `plugins/` with a class exposing `name`, `keywords`, and `handle(text)`:
+## Installable web app (PWA)
 
-```python
-class Example:
-    name = "Example"
-    keywords = ["test plugin"]
-
-    def handle(self, text: str) -> str | None:
-        return "This is an example plugin. It works!"
-```
-
-Plugins are auto-discovered at startup and matched before built-in keyword handlers.
+The frontend ships a web app manifest, app icons, and a service worker (`frontend/public/`). Open Hollali in a Chromium browser and choose **Install app** in the sidebar (or the browser’s install prompt) to run it in its own window. The service worker only caches the app shell and hashed assets and never intercepts `/api/*`; chat streaming and voice events always reach the live local service. Offline you can still open the app and browse cached conversations, but chatting requires the backend, which is always on the same machine.
 
 ## Architecture
 
-```
-# Entry points
-main.py           CLI entry point (text + voice modes)
-desktop.py        GUI entry point (PySide6)
-
-# Core
-config.py         .env-based configuration
-constants.py      Shared constants (end-conversation phrases)
-log.py            Structured logging (file + console)
-database.py       SQLite persistence (conversations, notes, preferences)
-
-# Speech I/O
-speech.py         STT (Google/Vosk) + TTS (Piper/espeak/pyttsx3)
-
-# Intelligence
-llm.py            Ollama integration (retries, offline fallback), conversation manager
-commands.py       Command registry + routing (keyword handlers, then LLM)
-handlers/         Built-in keyword handlers by concern (conversation, knowledge,
-                  web, system, productivity, time_date)
-system_control.py System commands (volume, brightness, screenshot, lock)
-
-# Wake word
-wake.py           Configurable wake-word matching + optional openwakeword streaming engine
-
-# Extensibility
-plugin_loader.py  Auto-discovers and loads plugins
-plugins/          Drop-in plugin directory
-
-# Utilities
-utils.py          Cross-platform helpers (date, email, notes, apps)
-
-# Desktop UI (PySide6)
-ui/
-├── main_window.py     Main chat window, layout, signal wiring
-├── tray.py            System tray icon and menu
-├── navigation.py      Side navigation panel
-├── widgets.py         ChatBubble, ChatView, WelcomeWidget, MicButton,
-│                      ThinkingIndicator, ToastWidget, WaveformWidget
-├── overlay.py         Compact overlay widget
-├── dialogs.py         Settings dialog
-├── threads.py         Background QThreads (audio engine, text command)
-└── theming.py         Dark/light palette + Qt stylesheet generation
-
-# Tests
-tests/
-├── test_commands.py       29 tests
-├── test_database.py       11 tests
-├── test_config.py          5 tests
-├── test_plugin_loader.py   5 tests
-├── test_speech.py          6 tests
-├── test_system_control.py  8 tests
-├── test_utils.py          10 tests
-├── test_llm.py            10 tests
-├── test_wake.py           18 tests
-└── test_main.py            6 tests
+```text
+frontend/src/          React + TypeScript, Vite, Tailwind, Lucide
+backend/api/app.py     FastAPI web/API server and background voice service
+main.py                Existing terminal text/voice entry point
+commands.py            Existing command routing and streamed LLM interface
+llm.py                 Ollama integration and conversation manager
+speech.py, wake.py     Speech engines and wake-word lifecycle
+database.py            Existing SQLite storage plus additive conversation titles
+handlers/, plugins/    Existing Python capabilities and plugin contract
+system_control.py      Existing Linux system controls
 ```
 
-### Data flow (desktop GUI)
+## Configuration and integrations
 
-```
-EngineThread (QThread)           TextCommandThread (QThread)
-    │                                   │
-    ├─ rec_audio() → STT                ├─ process_command_stream()
-    │       │                           │       │
-    │       ├─ partial_text ─────┐      │       ├─ chunk → MainWindow
-    │       ├─ audio_level ──┐   │      │       └─ done  → MainWindow
-    │       └─ final text   ──┼───┤      │
-    │                         │   │      │
-    ├─ call() → wake word?    │   │      │
-    ├─ process_command() ─────┘   │      │
-    │       │                     │      │
-    │       ├─ talk_async() ──────┘      │
-    │       └─ response_ready ────┐      │
-    │                              │      │
-    └─ status_changed ──────────┐ │      │
-                                │ │      │
-MainWindow (Qt main thread) ◄──┘─┘──────┘
-    │
-    ├─ ChatView (QScrollArea)
-    ├─ ChatBubble updates
-    ├─ ThinkingIndicator start/stop
-    ├─ WaveformWidget.set_level()
-    └─ ToastWidget.show_message()
+Copy `.env.example` to `.env` for a source checkout or use `~/.hollali/.env` for a user-level configuration. Ollama is local by default. Optional keys configure OpenWeatherMap, NewsAPI, WolframAlpha, Gmail, Twilio, and Google Calendar. Features requiring those services may use their external network APIs.
+
+## Tests and checks
+
+```bash
+python -m pytest tests/ -q
+ruff check .
+ruff format --check .
+npm ci --prefix frontend
+npm run build --prefix frontend
 ```
 
 ## Troubleshooting
 
-**PyAudio not found** — Install `portaudio-devel` + `pyaudio`, or switch to Vosk (`STT_ENGINE=vosk` in `.env`).
-
-**LLM not responding** — Ensure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull qwen:latest`).
-
-**Desktop tray icon not visible** — On GNOME/Wayland, install `libappindicator-gtk3` or the `gnome-shell-extension-appindicator` extension.
-
-**Brightness not working** — Requires ACPI/Intel backlight (`/sys/class/backlight/intel_backlight`). May need `video` group membership.
-
-**Screenshot not working** — Requires a running X display server with ImageMagick's `import` command installed.
-
-## Contributing
-
-```bash
-# Run tests
-python -m pytest tests/
-
-# Check code style and formatting
-ruff check .
-ruff format --check .
-
-# Continuous integration runs lint + tests on every push (see .github/workflows/ci.yml)
-```
+- **PyAudio build fails:** install PortAudio and Python development headers, or select `STT_ENGINE=vosk`.
+- **Ollama is offline:** start `ollama serve` and pull a model, for example `ollama pull qwen:latest`.
+- **The web root says the frontend is not built:** run `npm run build --prefix frontend`, then restart `hollali-web`.
+- **Voice input is unavailable:** check the configured speech engine and Linux microphone access; Vosk can run offline.
 
 ## License
 

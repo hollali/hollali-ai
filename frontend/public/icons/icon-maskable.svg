@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Hollali">
+  <defs>
+    <linearGradient id="spark" x1="120" y1="120" x2="392" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d8ecd2"/>
+      <stop offset="1" stop-color="#7fa074"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="256" cy="256" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a8c7a0" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#a8c7a0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="#111210"/>
+  <circle cx="256" cy="256" r="180" fill="url(#glow)"/>
+  <path d="M256 120 C272 198 314 240 392 256 C314 272 272 314 256 392 C240 314 198 272 120 256 C198 240 240 198 256 120 Z" fill="url(#spark)"/>
+</svg>

@@ -1,4 +1,5 @@
 # Single source of truth: pyproject.toml
-# Install runtime dependencies with:  pip install -e .
-# Install dev dependencies with:      pip install -e ".[dev]"
+# Install CLI dependencies with:        pip install -e .
+# Install web API dependencies with:    pip install -e ".[web]"
+# Install dev dependencies with:        pip install -e ".[web,dev]"
 -e .
