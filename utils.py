@@ -13,8 +13,18 @@ from pathlib import Path
 import config
 from speech import talk
 
+try:
+    import hollali_fast as _rust
+except Exception:  # pragma: no cover - optional accelerator
+    _rust = None
+
 
 def today_date() -> str:
+    if _rust is not None:
+        try:
+            return _rust.today_date()
+        except Exception:
+            pass
     now = datetime.datetime.now()
     weekday = calendar.day_name[now.weekday()]
     month = now.strftime("%B")
@@ -29,6 +39,11 @@ def today_date() -> str:
 
 
 def say_hello(text: str) -> str:
+    if _rust is not None:
+        try:
+            return _rust.say_hello(text)
+        except Exception:
+            pass
     GREETINGS = {"hi", "hey", "hola", "greetings", "wassup", "hello"}
     RESPONSES = ["howdy", "whats good", "hello", "hey there"]
 
@@ -40,6 +55,11 @@ def say_hello(text: str) -> str:
 
 
 def wiki_person(text: str) -> str | None:
+    if _rust is not None:
+        try:
+            return _rust.wiki_person(text)
+        except Exception:
+            pass
     words = text.split()
     for i in range(len(words) - 3):
         if words[i].lower() == "who" and words[i + 1].lower() == "is":

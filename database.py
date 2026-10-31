@@ -5,6 +5,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
+try:
+    import hollali_fast as _rust
+except Exception:
+    _rust = None
+
 DB_PATH = Path.home() / ".hollali" / "hollali.db"
 _local = threading.local()
 _cleanup_lock = threading.Lock()
@@ -74,7 +79,9 @@ def save_conversation(session_id: str, role: str, content: str) -> None:
             (session_id, role, content),
         )
         if role == "user":
-            title = content.strip()[:60] or "New conversation"
+            title = (
+                _rust.truncate_title(content, 60) if _rust is not None else content.strip()[:60]
+            ) or "New conversation"
             conn.execute(
                 "INSERT OR IGNORE INTO conversation_metadata (session_id, title) VALUES (?, ?)",
                 (session_id, title),
@@ -141,7 +148,10 @@ def create_conversation(session_id: str, title: str = "New conversation") -> Non
     with _get_conn() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO conversation_metadata (session_id, title) VALUES (?, ?)",
-            (session_id, title.strip()[:120] or "New conversation"),
+            (
+                session_id,
+                (_rust.truncate_title(title, 120) if _rust is not None else title.strip()[:120]) or "New conversation",
+            ),
         )
 
 
@@ -193,7 +203,10 @@ def rename_conversation(session_id: str, title: str) -> None:
         conn.execute(
             "INSERT INTO conversation_metadata (session_id, title) VALUES (?, ?) "
             "ON CONFLICT(session_id) DO UPDATE SET title = excluded.title",
-            (session_id, title.strip()[:120] or "New conversation"),
+            (
+                session_id,
+                (_rust.truncate_title(title, 120) if _rust is not None else title.strip()[:120]) or "New conversation",
+            ),
         )
 
 
